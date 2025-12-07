@@ -16,8 +16,10 @@ struct BTreeNode {
     BTreeNode(bool leaf) {
         numKeys = 0;
         isLeaf = leaf;
-        for(int i=0;i<MAX_KEYS;i++) queues[i] = nullptr;
-        for(int i=0;i<=MAX_KEYS;i++) children[i] = nullptr;
+        for(int i=0;i<MAX_KEYS;i++)
+            queues[i] = nullptr;
+        for(int i=0;i<=MAX_KEYS;i++)
+            children[i] = nullptr;
     }
 };
 
