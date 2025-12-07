@@ -1,0 +1,60 @@
+// order_queue.cpp
+#include <iostream>
+#include "OrderQueue.h"
+using namespace std;
+
+OrderQueue::OrderQueue() {
+    front = nullptr;
+    rear = nullptr;
+    size = 0;
+}
+
+OrderQueue::~OrderQueue() {
+    while (front != nullptr) {
+        OrderNode* temp = front;
+        front = front->next;
+        delete temp;
+    }
+}
+
+void OrderQueue::enqueue(Order* order) {
+    OrderNode* node = new OrderNode;
+    node->order = order;
+    node->next = nullptr;
+
+    if (rear == nullptr) { // empty queue
+        front = rear = node;
+    } else {
+        rear->next = node;
+        rear = node;
+    }
+    size++;
+}
+
+Order* OrderQueue::dequeue() {
+    if (front == nullptr) return nullptr; // empty
+    OrderNode* temp = front;
+    Order* order = temp->order;
+    front = front->next;
+    if (front == nullptr) rear = nullptr;
+    delete temp;
+    size--;
+    return order;
+}
+
+Order* OrderQueue::peek() {
+    if (front == nullptr) return nullptr;
+    return front->order;
+}
+
+int OrderQueue::getSize() {
+    return size;
+}
+
+void OrderQueue::printQueue() {
+    OrderNode* current = front;
+    while (current != nullptr) {
+        cout << current->order->toString() << endl;
+        current = current->next;
+    }
+}
