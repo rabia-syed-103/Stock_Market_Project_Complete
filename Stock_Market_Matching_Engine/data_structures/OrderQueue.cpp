@@ -86,3 +86,15 @@ Order* OrderQueue::removeOrder(int orderID) {
 
     return nullptr; // not found
 }
+
+void OrderQueue::printDetailedQueue() {
+    OrderNode* current = front;
+    while (current) {
+        std::cout << "OrderID: " << current->order->orderID
+                  << " | User: " << current->order->userID
+                  << " | Qty: " << current->order->remainingQty
+                  << " | Price: $" << current->order->price
+                  << " | Status: " << current->order->status << "\n";
+        current = current->next;
+    }
+}

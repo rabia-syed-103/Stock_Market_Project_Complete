@@ -26,6 +26,8 @@ public:
     int getSize();
     void printQueue(); // For testing
     Order* removeOrder(int orderID);
+    void printDetailedQueue() ;
+
 
 };
 

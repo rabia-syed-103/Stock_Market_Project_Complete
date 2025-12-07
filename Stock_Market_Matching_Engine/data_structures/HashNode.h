@@ -1,18 +1,14 @@
 #ifndef HASHNODE_H
 #define HASHNODE_H
-#include "../core/Order.h"
 
+template<typename K, typename V>
 class HashNode {
 public:
-    int key;
-    Order* value;
+    K key;
+    V value;
     HashNode* next;
-
-    HashNode(int k, Order* v) {
-        key = k;
-        value = v;
-        next = nullptr;
-    }
+    
+    HashNode(K k, V v) : key(k), value(v), next(nullptr) {}
 };
 
 #endif
