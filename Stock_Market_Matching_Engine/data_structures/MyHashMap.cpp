@@ -1,6 +1,6 @@
 #include "MyHashMap.h"
 
-MyHashMap:: MyHashMap(int cap = 10) {
+MyHashMap:: MyHashMap(int cap) {
     capacity = cap;
     table = new HashNode*[capacity];
 

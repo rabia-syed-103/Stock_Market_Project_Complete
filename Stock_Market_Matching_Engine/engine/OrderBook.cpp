@@ -108,45 +108,69 @@ void OrderBook::printOrderBook() {
     sellTree->print();
 }
 
+// orderbook.cpp - FIXED cancelOrder
 void OrderBook::cancelOrder(int orderID) {
     bool found = false;
-
-    // Check BUY tree
-    for (double price = buyTree->getLowestKey();
-         price <= buyTree->getHighestKey();
-         price = buyTree->nextKey(price))
-    {
-        OrderQueue* q = buyTree->search(price);
-        if (!q) continue;
-
-        Order* ord = q->removeOrder(orderID);
-        if (ord) {
-            ord->cancel();
-            std::cout << "Cancelled OrderID " << orderID << " from BUY side\n";
-            found = true;
-            break;
+    
+    // ========== CHECK BUY TREE ==========
+    double lowestBuy = buyTree->getLowestKey();
+    double highestBuy = buyTree->getHighestKey();
+    
+    // Validate tree has keys
+    if (lowestBuy != -1 && highestBuy != -1) {
+        double price = lowestBuy;
+        
+        while (price != -1 && price <= highestBuy) {
+            OrderQueue* q = buyTree->search(price);
+            
+            if (q && q->getSize() > 0) {  // ✅ Check queue exists AND has orders
+                Order* ord = q->removeOrder(orderID);
+                if (ord) {
+                    ord->cancel();
+                    std::cout << "Cancelled OrderID " << orderID << " from BUY side at $" << price << "\n";
+                    found = true;
+                    break;
+                }
+            }
+            
+            // Move to next price level
+            double nextPrice = buyTree->nextKey(price);
+            if (nextPrice == -1 || nextPrice == price) break;  // ✅ Prevent infinite loop
+            price = nextPrice;
         }
     }
-
-    if (found) return;
-
-    // Check SELL tree
-    for (double price = sellTree->getLowestKey();
-         price <= sellTree->getHighestKey();
-         price = sellTree->nextKey(price))
-    {
-        OrderQueue* q = sellTree->search(price);
-        if (!q) continue;
-
-        Order* ord = q->removeOrder(orderID);
-        if (ord) {
-            ord->cancel();
-            std::cout << "Cancelled OrderID " << orderID << " from SELL side\n";
-            found = true;
-            break;
+    
+    if (found) return;  // Found in buy tree, done
+    
+    // ========== CHECK SELL TREE ==========
+    double lowestSell = sellTree->getLowestKey();
+    double highestSell = sellTree->getHighestKey();
+    
+    // Validate tree has keys
+    if (lowestSell != -1 && highestSell != -1) {
+        double price = lowestSell;
+        
+        while (price != -1 && price <= highestSell) {
+            OrderQueue* q = sellTree->search(price);
+            
+            if (q && q->getSize() > 0) {  // ✅ Check queue exists AND has orders
+                Order* ord = q->removeOrder(orderID);
+                if (ord) {
+                    ord->cancel();
+                    std::cout << "Cancelled OrderID " << orderID << " from SELL side at $" << price << "\n";
+                    found = true;
+                    break;
+                }
+            }
+            
+            // Move to next price level
+            double nextPrice = sellTree->nextKey(price);
+            if (nextPrice == -1 || nextPrice == price) break;  // ✅ Prevent infinite loop
+            price = nextPrice;
         }
     }
-
-    if (!found)
+    
+    if (!found) {
         std::cout << "OrderID " << orderID << " not found. Cancel failed.\n";
+    }
 }

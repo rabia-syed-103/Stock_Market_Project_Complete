@@ -58,3 +58,31 @@ void OrderQueue::printQueue() {
         current = current->next;
     }
 }
+
+Order* OrderQueue::removeOrder(int orderID) {
+    OrderNode* prev = nullptr;
+    OrderNode* current = front;
+
+    while (current) {
+        if (current->order->orderID == orderID) {
+            Order* ord = current->order;
+
+            // Remove node safely
+            if (prev == nullptr)
+                front = current->next;
+            else
+                prev->next = current->next;
+
+            if (current == rear)
+                rear = prev;
+
+            delete current;
+            size--;
+            return ord; // return pointer to order (caller can mark canceled)
+        }
+        prev = current;
+        current = current->next;
+    }
+
+    return nullptr; // not found
+}

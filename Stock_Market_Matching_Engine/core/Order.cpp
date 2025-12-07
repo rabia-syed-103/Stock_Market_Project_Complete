@@ -52,7 +52,6 @@ int Order:: getRemainingQuantity()
     return this->remainingQty;
 }
 
-int Order:: getPrice()
-{
+double Order::getPrice() {
     return this->price;
 }
