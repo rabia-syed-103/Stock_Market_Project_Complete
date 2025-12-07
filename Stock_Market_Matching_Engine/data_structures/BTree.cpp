@@ -125,3 +125,47 @@ Order* BTree::getBest() {
     if (node->numKeys == 0) return nullptr;
     return node->queues[node->numKeys-1]->peek();
 }
+
+double BTree::getLowestKey() {
+    if (!root || root->numKeys == 0) return -1;
+
+    BTreeNode* curr = root;
+    while (!curr->isLeaf) {
+        curr = curr->children[0]; // leftmost child
+    }
+
+    return curr->keys[0]; // smallest key in leftmost leaf
+}
+
+double BTree::getHighestKey() {
+    if (!root || root->numKeys == 0) return -1;
+
+    BTreeNode* curr = root;
+    while (!curr->isLeaf) {
+        curr = curr->children[curr->numKeys]; // rightmost child
+    }
+
+    return curr->keys[curr->numKeys - 1]; // largest key in rightmost leaf
+}
+
+double BTree::nextKey(double price) {
+    if (!root) return -1;
+
+    BTreeNode* curr = root;
+    double successor = -1;
+
+    while (curr != nullptr) {
+        int i = 0;
+        while (i < curr->numKeys && curr->keys[i] <= price) i++;
+
+        if (i < curr->numKeys) {
+            successor = curr->keys[i]; // potential next key
+        }
+
+        if (curr->isLeaf) break; // reached leaf
+        curr = curr->children[i];  // go down the correct child
+    }
+
+    return successor;
+}
+

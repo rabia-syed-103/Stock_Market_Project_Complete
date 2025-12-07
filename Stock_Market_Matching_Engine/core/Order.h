@@ -26,6 +26,10 @@ public:
     void fill(int qty);
     void cancel();
     string toString() const;
+    bool getSide();
+    int getRemainingQuantity();
+    int getPrice();
+
 };
 
 #endif // ORDER_H

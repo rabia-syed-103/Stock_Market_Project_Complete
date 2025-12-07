@@ -28,7 +28,6 @@ void Order:: cancel() {
     }
 }
 
-// Convert order to a readable string
 string Order:: toString () const {
     std::ostringstream oss;
     oss << "OrderID: " << orderID
@@ -41,4 +40,19 @@ string Order:: toString () const {
         << ", Status: " << status
         << ", Timestamp: " << timestamp;
     return oss.str();
+}
+
+bool Order:: getSide()
+{
+    return this->side == "BUY";
+}
+
+int Order:: getRemainingQuantity()
+{
+    return this->remainingQty;
+}
+
+int Order:: getPrice()
+{
+    return this->price;
 }

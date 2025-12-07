@@ -9,7 +9,7 @@ using namespace std;
 class BTree {
 private:
     BTreeNode* root;
-    int t; // minimum degree
+    int t;
 
     void traverse(BTreeNode* node);
     BTreeNode* search(BTreeNode* node, double key);
@@ -22,6 +22,10 @@ public:
     OrderQueue* search(double key);
     void print();
     Order* getBest(); // max buy or min sell
+    double getLowestKey();
+    double getHighestKey();
+    double nextKey(double price);
+
 };
 
 #endif

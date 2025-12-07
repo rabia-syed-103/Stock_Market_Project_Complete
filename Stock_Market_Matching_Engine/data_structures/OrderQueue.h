@@ -25,6 +25,8 @@ public:
     Order* peek();   // front element without removing
     int getSize();
     void printQueue(); // For testing
+    Order* removeOrder(int orderID);
+
 };
 
 #endif
