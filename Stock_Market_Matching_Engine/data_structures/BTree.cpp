@@ -8,7 +8,6 @@ BTree::BTree(int _t) {
     t = _t;
 }
 
-// Traverse for debugging
 void BTree::traverse(BTreeNode* node) {
     if (!node) return;
     int i;
@@ -24,7 +23,6 @@ void BTree::print() {
     cout << endl;
 }
 
-// Search for price
 BTreeNode* BTree::search(BTreeNode* node, double key) {
     int i = 0;
     while (i < node->numKeys && key > node->keys[i]) i++;
@@ -58,19 +56,18 @@ void BTree::insert(double key, Order* order) {
     }
 }
 
-// Insert in non-full node
 void BTree::insertNonFull(BTreeNode* node, double key, Order* order) {
     int i = node->numKeys - 1;
 
     if (node->isLeaf) {
-        // find location
+        
         while (i >= 0 && node->keys[i] > key) {
             node->keys[i+1] = node->keys[i];
             node->queues[i+1] = node->queues[i];
             i--;
         }
 
-        // same price exists?
+        
         if (i >= 0 && node->keys[i] == key) {
             node->queues[i]->enqueue(order);
         } else {
@@ -90,7 +87,6 @@ void BTree::insertNonFull(BTreeNode* node, double key, Order* order) {
     }
 }
 
-// Split child
 void BTree::splitChild(BTreeNode* parent, int i, BTreeNode* y) {
     BTreeNode* z = new BTreeNode(y->isLeaf);
     int mid = MAX_KEYS/2;
@@ -121,11 +117,10 @@ void BTree::splitChild(BTreeNode* parent, int i, BTreeNode* y) {
     parent->numKeys++;
 }
 
-// Get best price (for buy: max, for sell: min)
 Order* BTree::getBest() {
     BTreeNode* node = root;
     while (!node->isLeaf) {
-        node = node->children[node->numKeys]; // rightmost for max
+        node = node->children[node->numKeys]; 
     }
     if (node->numKeys == 0) return nullptr;
     return node->queues[node->numKeys-1]->peek();
