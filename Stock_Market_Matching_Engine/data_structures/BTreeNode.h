@@ -4,7 +4,7 @@
 
 #include "OrderQueue.h"
 
-const int MAX_KEYS = 5; // max keys per node (for simplicity)
+const int MAX_KEYS = 5; // max keys per node 
 
 struct BTreeNode {
     int numKeys;                   // current keys

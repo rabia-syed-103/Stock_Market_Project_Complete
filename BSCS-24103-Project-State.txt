@@ -1,0 +1,50 @@
+Stock Market Matching Engine - Feature Implementation Status
+
+Implemented Features:
+
+1. User Management:
+
+   * createUser(username, initial_balance)
+   * getUser(username)
+   * Update user cash balance and holdings after trades and cancellations
+
+2. Order Management:
+
+   * placeOrder(user, symbol, side, qty, price)
+   * cancelOrder(orderID)
+   * validateOrder(user, order) for sufficient funds/shares
+   * Order status tracking: ACTIVE, PARTIAL_FILL, FILLED, CANCELLED
+
+3. Order Matching & Trade Execution:
+
+   * matchOrders(symbol)
+   * executeTrade(buyOrder, sellOrder)
+   * Partial fills handled correctly
+   * Complete fills handled correctly
+
+4. Multi-Stock Handling:
+
+   * Separate order books for each stock symbol
+   * getBestBid(symbol), getBestAsk(symbol)
+
+5. Concurrency / Thread Safety:
+
+   * Thread-safe order placement (multiple users can place orders simultaneously without crashes)
+
+6. Order Book & Portfolio Display:
+
+   * printOrderBook(symbol)
+   * printPortfolio(user)
+
+Remaining Features
+
+1. DiskPersistence / Storage:
+
+   *Base is done I have implemented the necassary files needed just attatchement to the core is missing.
+
+2. Socket and Frontend is missing
+Summary:
+
+* Core matching engine, order management, user management, and thread safety are working.
+* Disk persistence and frontend is left to complete.
+

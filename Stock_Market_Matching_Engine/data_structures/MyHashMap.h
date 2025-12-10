@@ -1,49 +1,26 @@
-
 #ifndef MYHASHMAP_H
 #define MYHASHMAP_H
 
+#include <functional>
+#include <stdexcept>
 #include <cstring>
-#include <string>
 #include "HashNode.h"
 
-template<typename K, typename V>
+template <typename K, typename V>
 class MyHashMap {
 private:
     HashNode<K, V>** table;
     int capacity;
     int size;
     
-    // Hash function for int keys
-    int hashFunction(int key) {
-        return key % capacity;
+    // Generic hash function using std::hash
+    size_t hashFunction(const K& key) const {
+        return std::hash<K>{}(key) % capacity;
     }
     
-    // Hash function for string keys (djb2 algorithm)
-    int hashFunction(const std::string& key) {
-        unsigned long hash = 5381;
-        for (char c : key) {
-            hash = ((hash << 5) + hash) + c;
-        }
-        return hash % capacity;
-    }
-    
-    // Hash function for const char*
-    int hashFunction(const char* key) {
-        unsigned long hash = 5381;
-        for (int i = 0; key[i] != '\0'; i++) {
-            hash = ((hash << 5) + hash) + key[i];
-        }
-        return hash % capacity;
-    }
-    
-    // Key comparison for different types
-    bool keysEqual(const K& k1, const K& k2) {
+    // Key comparison - works for any type with == operator
+    bool keysEqual(const K& k1, const K& k2) const {
         return k1 == k2;
-    }
-    
-    // Specialization for const char*
-    bool keysEqual(const char* k1, const char* k2) {
-        return strcmp(k1, k2) == 0;
     }
 
 public:
@@ -54,27 +31,27 @@ public:
         }
     }
     
-    void insert(K key, V value) {
+    void insert(const K& key, const V& value) {
         int index = hashFunction(key);
-        HashNode<K, V>* head = table[index];
         
-        // Check if key exists -> update
-        while (head != nullptr) {
-            if (keysEqual(head->key, key)) {
-                head->value = value;
+        // Check if key already exists
+        HashNode<K, V>* current = table[index];
+        while (current != nullptr) {
+            if (keysEqual(current->key, key)) {
+                current->value = value; // Update existing value
                 return;
             }
-            head = head->next;
+            current = current->next;
         }
         
-        // Insert new node at head
-        HashNode<K, V>* newNode = new HashNode<K, V>(key, value);
-        newNode->next = table[index];
-        table[index] = newNode;
+        // Insert new node at the beginning of the chain
+        HashNode<K, V>* node = new HashNode<K, V>(key, value);
+        node->next = table[index];
+        table[index] = node;
         size++;
     }
     
-    V get(K key) {
+    V get(const K& key) const {
         int index = hashFunction(key);
         HashNode<K, V>* head = table[index];
         
@@ -85,10 +62,27 @@ public:
             head = head->next;
         }
         
-        return nullptr;  // Not found
+        // Return default-constructed value (nullptr for pointers)
+        return V();
     }
     
-    void remove(K key) {
+    // Alternative: return pointer or optional-like behavior
+    bool get(const K& key, V& outValue) const {
+        int index = hashFunction(key);
+        HashNode<K, V>* head = table[index];
+        
+        while (head != nullptr) {
+            if (keysEqual(head->key, key)) {
+                outValue = head->value;
+                return true;
+            }
+            head = head->next;
+        }
+        
+        return false;
+    }
+    
+    void remove(const K& key) {
         int index = hashFunction(key);
         HashNode<K, V>* head = table[index];
         HashNode<K, V>* prev = nullptr;
@@ -109,12 +103,26 @@ public:
         }
     }
     
-    bool contains(K key) {
-        return get(key) != nullptr;
+    bool contains(const K& key) const {
+        int index = hashFunction(key);
+        HashNode<K, V>* head = table[index];
+        
+        while (head != nullptr) {
+            if (keysEqual(head->key, key)) {
+                return true;
+            }
+            head = head->next;
+        }
+        
+        return false;
     }
     
     int getSize() const {
         return size;
+    }
+    
+    bool isEmpty() const {
+        return size == 0;
     }
     
     ~MyHashMap() {
@@ -128,7 +136,239 @@ public:
         }
         delete[] table;
     }
+    
+    // Prevent copying (optional, but recommended for resource management)
+    MyHashMap(const MyHashMap&) = delete;
+    MyHashMap& operator=(const MyHashMap&) = delete;
+};
+
+// Specialization for const char* keys
+template <typename V>
+class MyHashMap<const char*, V> {
+private:
+    HashNode<const char*, V>** table;
+    int capacity;
+    int size;
+    
+    size_t hashFunction(const char* key) const {
+        unsigned long hash = 5381;
+        for (int i = 0; key[i] != '\0'; i++) {
+            hash = ((hash << 5) + hash) + key[i];
+        }
+        return hash % capacity;
+    }
+    
+    bool keysEqual(const char* k1, const char* k2) const {
+        return strcmp(k1, k2) == 0;
+    }
+
+public:
+    MyHashMap(int cap = 100) : capacity(cap), size(0) {
+        table = new HashNode<const char*, V>*[capacity];
+        for (int i = 0; i < capacity; i++) {
+            table[i] = nullptr;
+        }
+    }
+    
+    void insert(const char* key, const V& value) {
+        int index = hashFunction(key);
+        
+        HashNode<const char*, V>* current = table[index];
+        while (current != nullptr) {
+            if (keysEqual(current->key, key)) {
+                current->value = value;
+                return;
+            }
+            current = current->next;
+        }
+        
+        HashNode<const char*, V>* node = new HashNode<const char*, V>(key, value);
+        node->next = table[index];
+        table[index] = node;
+        size++;
+    }
+    
+    V get(const char* key) const {
+        int index = hashFunction(key);
+        HashNode<const char*, V>* head = table[index];
+        
+        while (head != nullptr) {
+            if (keysEqual(head->key, key)) {
+                return head->value;
+            }
+            head = head->next;
+        }
+        
+        // Return default-constructed value (nullptr for pointers)
+        return V();
+    }
+    
+    bool get(const char* key, V& outValue) const {
+        int index = hashFunction(key);
+        HashNode<const char*, V>* head = table[index];
+        
+        while (head != nullptr) {
+            if (keysEqual(head->key, key)) {
+                outValue = head->value;
+                return true;
+            }
+            head = head->next;
+        }
+        
+        return false;
+    }
+    
+    void remove(const char* key) {
+        int index = hashFunction(key);
+        HashNode<const char*, V>* head = table[index];
+        HashNode<const char*, V>* prev = nullptr;
+        
+        while (head != nullptr) {
+            if (keysEqual(head->key, key)) {
+                if (prev == nullptr) {
+                    table[index] = head->next;
+                } else {
+                    prev->next = head->next;
+                }
+                delete head;
+                size--;
+                return;
+            }
+            prev = head;
+            head = head->next;
+        }
+    }
+    
+    bool contains(const char* key) const {
+        int index = hashFunction(key);
+        HashNode<const char*, V>* head = table[index];
+        
+        while (head != nullptr) {
+            if (keysEqual(head->key, key)) {
+                return true;
+            }
+            head = head->next;
+        }
+        
+        return false;
+    }
+    
+    int getSize() const {
+        return size;
+    }
+    
+    bool isEmpty() const {
+        return size == 0;
+    }
+    
+    ~MyHashMap() {
+        for (int i = 0; i < capacity; i++) {
+            HashNode<const char*, V>* head = table[i];
+            while (head != nullptr) {
+                HashNode<const char*, V>* temp = head;
+                head = head->next;
+                delete temp;
+            }
+        }
+        delete[] table;
+    }
+    
+    MyHashMap(const MyHashMap&) = delete;
+    MyHashMap& operator=(const MyHashMap&) = delete;
 };
 
 #endif
+/*template <typename K, typename V>
+class MyHashMap {
+private:
+    struct HashNode {
+        K key;
+        V value;
+        HashNode* next;
 
+        HashNode(const K& k, const V& v) : key(k), value(v), next(nullptr) {}
+    };
+
+    int capacity;
+    HashNode** table;
+
+    int hashFunction(const K& key) const {
+        std::hash<K> hashObj;
+        return hashObj(key) % capacity;
+    }
+
+public:
+    MyHashMap(int cap = 100) : capacity(cap) {
+        table = new HashNode*[capacity];
+        for (int i = 0; i < capacity; i++) table[i] = nullptr;
+    }
+
+    ~MyHashMap() {
+        for (int i = 0; i < capacity; i++) {
+            HashNode* curr = table[i];
+            while (curr) {
+                HashNode* temp = curr;
+                curr = curr->next;
+                delete temp;
+            }
+        }
+        delete[] table;
+    }
+
+    void insert(const K& key, const V& value) {
+        int idx = hashFunction(key);
+        HashNode* curr = table[idx];
+
+        while (curr) {
+            if (curr->key == key) {
+                curr->value = value;     // Replace value
+                return;
+            }
+            curr = curr->next;
+        }
+
+        HashNode* newNode = new HashNode(key, value);
+        newNode->next = table[idx];
+        table[idx] = newNode;
+    }
+
+    // works for all types
+    bool get(const K& key, V& outValue) const {
+        int idx = hashFunction(key);
+        HashNode* curr = table[idx];
+
+        while (curr) {
+            if (curr->key == key) {
+                outValue = curr->value;
+                return true;
+            }
+            curr = curr->next;
+        }
+        return false;
+    }
+
+    bool contains(const K& key) const {
+        V temp;
+        return get(key, temp);
+    }
+
+    bool remove(const K& key) {
+        int idx = hashFunction(key);
+        HashNode* curr = table[idx];
+        HashNode* prev = nullptr;
+
+        while (curr) {
+            if (curr->key == key) {
+                if (prev) prev->next = curr->next;
+                else table[idx] = curr->next;
+
+                delete curr;
+                return true;
+            }
+            prev = curr;
+            curr = curr->next;
+        }
+        return false;
+    }
+};
+*/

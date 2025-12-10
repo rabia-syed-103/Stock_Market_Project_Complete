@@ -25,6 +25,8 @@ public:
     double getLowestKey();
     double getHighestKey();
     double nextKey(double price);
+    Order* getBestSell();
+    double prevKey(double price);  
 
 };
 

@@ -13,7 +13,7 @@ OrderQueue::~OrderQueue() {
     while (front != nullptr) {
         OrderNode* temp = front;
         front = front->next;
-        delete temp;
+        delete temp;  
     }
 }
 
@@ -91,10 +91,10 @@ void OrderQueue::printDetailedQueue() {
     OrderNode* current = front;
     while (current) {
         std::cout << "OrderID: " << current->order->orderID
-                  << " | User: " << current->order->userID
-                  << " | Qty: " << current->order->remainingQty
-                  << " | Price: $" << current->order->price
-                  << " | Status: " << current->order->status << "\n";
+                  << " , User: " << current->order->userID
+                  << " , Qty: " << current->order->remainingQty
+                  << " , Price: $" << current->order->price
+                  << " , Status: " << current->order->status << "\n";
         current = current->next;
     }
 }

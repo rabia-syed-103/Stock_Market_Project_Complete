@@ -20,9 +20,8 @@ public:
     int quantity;           // Trade quantity
     time_t timestamp;       // Trade execution time
 
-public:
     // Constructor
-    Trade(int tid, Order* buyOrder, Order* sellOrder, int qty, double prc);
+    Trade(int tid,const Order* o1,const Order*  o2, int qty, double prc);
 
     // Displayable format
     string toString() const;

@@ -1,80 +1,119 @@
 #include "User.h"
+#include <iostream>
 
-User :: User (const std::string& uid, double cash)
-    : userID(uid), cashBalance(cash) {}
+User::User(const std::string& uid, double cash)
+    : userID(uid), cashBalance(cash) {
+    // Vectors start empty, will grow dynamically
+}
 
-bool User:: deductCash(double amount) {
-    if (cashBalance < amount) return false;
+// Cash management
+bool User::deductCash(double amount) {
+    if (cashBalance < amount) {
+        cout << " - INSUFFICIENT FUNDS\n";
+        return false;
+    }
     cashBalance -= amount;
+    cout << " - SUCCESS, new balance=$" << cashBalance << "\n";
     return true;
 }
 
-void User:: addCash(double amount) {
+void User::addCash(double amount) {
     cashBalance += amount;
 }
 
-// Add or increase stock holding
-void User:: addStock(const std::string& symbol, int qty) {
+double User::getCashBalance() const {
+    return cashBalance;
+}
+
+// Stock management
+void User::addStock(const string& symbol, int qty) {
     int idx = findSymbol(symbol);
     if (idx == -1) {
-        symbols[holdingsCount] = symbol;
-        quantities[holdingsCount] = qty;
-        holdingsCount++;
+        // New stock - add to vectors
+        symbols.push_back(symbol);
+        quantities.push_back(qty);
     } else {
+        // Existing stock - increase quantity
         quantities[idx] += qty;
     }
 }
 
-// Remove stock, return false if insufficient quantity
-bool User:: removeStock(const std::string& symbol, int qty) {
+bool User::removeStock(const string& symbol, int qty) {
     int idx = findSymbol(symbol);
     if (idx == -1) return false;
     if (quantities[idx] < qty) return false;
-
+    
     quantities[idx] -= qty;
     return true;
 }
 
-// ---------------- Helper methods ----------------
-
-// Find stock index
-int User:: findSymbol(const std::string& symbol) const {
-    for (int i = 0; i < holdingsCount; i++) {
-        if (symbols[i] == symbol) return i;
-    }
-    return -1;
+int User::getStockQuantity(const string& symbol) const {
+    int idx = findSymbol(symbol);
+    if (idx == -1) return 0;
+    return quantities[idx];
 }
 
-// Add active order ID
-void User:: addActiveOrder(int orderID) {
-    activeOrders[activeOrderCount++] = orderID;
+// Order management
+void User::addActiveOrder(int orderID) {
+    activeOrders.push_back(orderID);
 }
 
-// Remove active order ID
-void User:: removeActiveOrder(int orderID) {
-    for (int i = 0; i < activeOrderCount; i++) {
+void User::removeActiveOrder(int orderID) {
+    for (size_t i = 0; i < activeOrders.size(); i++) {
         if (activeOrders[i] == orderID) {
-            activeOrders[i] = activeOrders[activeOrderCount - 1];
-            activeOrderCount--;
+            activeOrders[i] = activeOrders.back();
+            activeOrders.pop_back();
             return;
         }
     }
 }
 
-// For debugging
-string User:: toString() const {
-    std::ostringstream oss;
-    oss << "User: " << userID << " | Cash: " << cashBalance;
+// Getters
+string User::getUserID() const {
+    return userID;
+}
 
-    oss << " | Holdings: ";
-    for (int i = 0; i < holdingsCount; i++) {
+// Helper methods
+int User::findSymbol(const string& symbol) const {
+    for (size_t i = 0; i < symbols.size(); i++) {
+        if (symbols[i] == symbol) return i;
+    }
+    return -1;
+}
+
+// Display
+string User::toString() const {
+    std::ostringstream oss;
+    oss << "User: " << userID << ", Cash: $" << cashBalance;
+    
+    oss << ", Holdings: ";
+    for (size_t i = 0; i < symbols.size(); i++) {
         oss << "[" << symbols[i] << ":" << quantities[i] << "] ";
     }
-
-    oss << " | Active Orders: ";
-    for (int i = 0; i < activeOrderCount; i++) {
+    
+    oss << ", Active Orders: ";
+    for (size_t i = 0; i < activeOrders.size(); i++) {
         oss << activeOrders[i] << " ";
     }
-
+    
     return oss.str();
+}
+
+vector<int> User:: getActiveOrderIDs() const
+{
+    return activeOrders;
+    
+}
+
+vector<StockHolding> User:: getAllHoldings() const {
+    vector<StockHolding> holdings;
+    for (size_t i = 0; i < symbols.size(); i++) {
+        if (quantities[i] > 0) {
+            StockHolding h;
+            h.symbol = symbols[i];
+            h.quantity = quantities[i];
+            holdings.push_back(h);
+        }
+    }
+    return holdings;
 }

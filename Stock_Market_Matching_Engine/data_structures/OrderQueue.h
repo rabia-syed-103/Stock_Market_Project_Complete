@@ -4,7 +4,6 @@
 
 #include "../core/Order.h"
 
-
 struct OrderNode {
     Order* order;
     OrderNode* next;

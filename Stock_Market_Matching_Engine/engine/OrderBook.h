@@ -7,7 +7,9 @@
 #include "../data_structures/BTree.h"
 #include "../core/Order.h"
 #include "../core/Trade.h"
+#include <algorithm>  
 
+using namespace std;
 class OrderBook {
 private:
     std::string symbol;

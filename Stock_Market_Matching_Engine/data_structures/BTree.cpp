@@ -101,8 +101,7 @@ void BTree::splitChild(BTreeNode* parent, int i, BTreeNode* y) {
         z->keys[j] = y->keys[j + mid + 1];
         z->queues[j] = y->queues[j + mid + 1];
         
-        // ✅ IMPORTANT: Clear the original pointers in y
-        // This prevents double-free when y is deleted later
+
         y->queues[j + mid + 1] = nullptr;
     }
 
@@ -110,7 +109,7 @@ void BTree::splitChild(BTreeNode* parent, int i, BTreeNode* y) {
     if (!y->isLeaf) {
         for (int j = 0; j <= z->numKeys; j++) {
             z->children[j] = y->children[j + mid + 1];
-            y->children[j + mid + 1] = nullptr;  // ✅ Clear original pointers
+            y->children[j + mid + 1] = nullptr;  
         }
     }
 
@@ -122,7 +121,6 @@ void BTree::splitChild(BTreeNode* parent, int i, BTreeNode* y) {
         parent->children[j + 1] = parent->children[j];
         parent->keys[j] = parent->keys[j - 1];
         
-        // ✅ FIXED: Don't overwrite existing queue, shift it
         parent->queues[j] = parent->queues[j - 1];
     }
 
@@ -130,11 +128,8 @@ void BTree::splitChild(BTreeNode* parent, int i, BTreeNode* y) {
     parent->children[i + 1] = z;
     parent->keys[i] = y->keys[mid];
     
-    // ✅ FIXED: Don't overwrite - move the middle queue up
-    // Note: In a typical B-Tree for range queries, we might not store
-    // the middle key's queue in parent. But if we do:
     parent->queues[i] = y->queues[mid];
-    y->queues[mid] = nullptr;  // ✅ Clear to prevent double-free
+    y->queues[mid] = nullptr;  
     
     parent->numKeys++;
 }
@@ -147,19 +142,15 @@ Order* BTree::getBest() {
         node = node->children[node->numKeys]; 
     }
     
-    // Search backwards through the leaf
-    while (node && node->numKeys > 0) {
-        // Check last price level
-        int lastIdx = node->numKeys - 1;
-        OrderQueue* q = node->queues[lastIdx];
+    // Use for loop instead of while to prevent infinite loop
+    for (int i = node->numKeys - 1; i >= 0; i--) {
+        OrderQueue* q = node->queues[i];
         
         if (q && q->getSize() > 0) {
-            return q->peek();
+            Order* o1 = q->peek();
+            q->dequeue();
+            return o1;
         }
-        
-        // This queue is empty - should remove this key from tree
-        // For now, just skip it (proper fix: remove key from B-Tree)
-        node->numKeys--;  // Temporary fix: just hide this key
     }
     
     return nullptr;
@@ -201,10 +192,54 @@ double BTree::nextKey(double price) {
             successor = curr->keys[i]; // potential next key
         }
 
-        if (curr->isLeaf) break; // reached leaf
-        curr = curr->children[i];  // go down the correct child
+        if (curr->isLeaf) break; 
+        curr = curr->children[i]; 
     }
 
     return successor;
 }
 
+Order* BTree::getBestSell() {
+    if (!root) return nullptr;
+    
+    // Get lowest price in tree
+    double lowestPrice = getLowestKey();
+    if (lowestPrice == -1) return nullptr;
+    
+    // Get the queue at that price
+    OrderQueue* queue = search(lowestPrice);
+    if (!queue || queue->getSize() == 0) return nullptr;
+    
+    // Return first order in queue (FIFO)
+    return queue->peek();
+}
+
+
+double BTree::prevKey(double price) {
+    if (!root) return -1;
+
+    BTreeNode* curr = root;
+    double predecessor = -1;
+
+    while (curr != nullptr) {
+        int i = curr->numKeys - 1;
+        
+        // Find largest key that is < price
+        while (i >= 0 && curr->keys[i] >= price) i--;
+
+        if (i >= 0) {
+            predecessor = curr->keys[i];  // potential prev key
+        }
+
+        if (curr->isLeaf) break;
+        
+        // Go to appropriate child
+        if (i >= 0) {
+            curr = curr->children[i + 1];
+        } else {
+            curr = curr->children[0];
+        }
+    }
+
+    return predecessor;
+}

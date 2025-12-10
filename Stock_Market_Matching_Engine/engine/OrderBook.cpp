@@ -1,5 +1,8 @@
 #include "OrderBook.h"
 #include <iostream>
+#include <algorithm>
+
+using namespace std;
 
 OrderBook::OrderBook(std::string sym) : symbol(sym) {
     buyTree = new BTree(3);   // degree = 3
@@ -17,54 +20,68 @@ OrderBook::~OrderBook() {
 }
 
 vector<Trade> OrderBook::addOrder(Order* order) {
-    //  LOCK: Entire matching process must be atomic
     pthread_mutex_lock(&bookLock);
-    
-    std::vector<Trade> trades;
+    vector<Trade> trades;
     bool isBuy = order->getSide();
-    
     if (isBuy) {
-        // Try to match with SELL orders
-        Order* bestSell = sellTree->getBest();
+
+        Order* bestSell = sellTree->getBestSell();
         
         while (bestSell != nullptr &&
                order->getRemainingQuantity() > 0 &&
                bestSell->price <= order->price) {
-            
-            int matchedQty = std::min(order->remainingQty, bestSell->remainingQty);
+            if (order->userID == bestSell->userID) {
+                double currentPrice = bestSell->price;
+                double nextPrice = sellTree->nextKey(currentPrice);
+                if (nextPrice != -1 && nextPrice != currentPrice) {
+                    bestSell = sellTree->search(nextPrice)->peek();
+                    continue;
+                } else {
+                    break;
+                }
+            }
+            int matchedQty = min(order->remainingQty, bestSell->remainingQty);
             
             Trade trade(
                 100 + trades.size(),
                 order,
                 bestSell,
                 matchedQty,
-                bestSell->price   // SELL price wins
+                bestSell->price   
             );
             
             trades.push_back(trade);
             order->fill(matchedQty);
             bestSell->fill(matchedQty);
-            
-            // Remove fully filled sell order
             if (bestSell->isFilled()) {
                 sellTree->search(bestSell->price)->dequeue();
             }
-            
-            bestSell = sellTree->getBest();
+
+            bestSell = sellTree->getBestSell();
         }
-        
-        // Add remaining to buy tree
+
         if (!order->isFilled()) {
             buyTree->insert(order->price, order);
         }
         
     } else {
-        // Try to match with BUY orders
+
         Order* bestBuy = buyTree->getBest();
         
         while (bestBuy != nullptr &&
                order->getRemainingQuantity() > 0 &&
                bestBuy->price >= order->price) {
+            
+            if (order->userID == bestBuy->userID) {
+                double currentPrice = bestBuy->price;
+                double nextPrice = buyTree->prevKey(currentPrice);
+                if (nextPrice != -1 && nextPrice != currentPrice) {
+                    bestBuy = buyTree->search(nextPrice)->peek();
+                    continue;
+                } else {
+                    break;
+                }
+            }
             
             int matchedQty = std::min(order->remainingQty, bestBuy->remainingQty);
             
@@ -73,7 +90,7 @@ vector<Trade> OrderBook::addOrder(Order* order) {
                 bestBuy,
                 order,
                 matchedQty,
-                bestBuy->price  // BUY price wins
+                bestBuy->price  
             );
             
             trades.push_back(trade);
@@ -83,28 +100,21 @@ vector<Trade> OrderBook::addOrder(Order* order) {
             if (bestBuy->isFilled()) {
                 buyTree->search(bestBuy->price)->dequeue();
             }
-            
             bestBuy = buyTree->getBest();
         }
-        
-        // Add remaining to sell tree
         if (!order->isFilled()) {
             sellTree->insert(order->price, order);
         }
     }
     
-    //  UNLOCK before returning
     pthread_mutex_unlock(&bookLock);
     return trades;
 }
 
 void OrderBook::cancelOrder(int orderID) {
-    //  LOCK: Prevent concurrent modifications
     pthread_mutex_lock(&bookLock);
     
     bool found = false;
-    
-    // Check BUY tree
     double lowestBuy = buyTree->getLowestKey();
     double highestBuy = buyTree->getHighestKey();
     
@@ -131,7 +141,7 @@ void OrderBook::cancelOrder(int orderID) {
     }
     
     if (!found) {
-        // Check SELL tree
+    
         double lowestSell = sellTree->getLowestKey();
         double highestSell = sellTree->getHighestKey();
         
@@ -162,12 +172,10 @@ void OrderBook::cancelOrder(int orderID) {
         std::cout << "OrderID " << orderID << " not found. Cancel failed.\n";
     }
     
-    //  UNLOCK
     pthread_mutex_unlock(&bookLock);
 }
 
 Order* OrderBook::getBestBid() {
-    //  LOCK for read
     pthread_mutex_lock(&bookLock);
     Order* best = buyTree->getBest();
     pthread_mutex_unlock(&bookLock);
@@ -175,42 +183,42 @@ Order* OrderBook::getBestBid() {
 }
 
 Order* OrderBook::getBestAsk() {
-    //  LOCK for read
     pthread_mutex_lock(&bookLock);
-    Order* best = sellTree->getBest();
+    Order* best = sellTree->getBestSell();  
     pthread_mutex_unlock(&bookLock);
     return best;
 }
 
 void OrderBook::printOrderBook() {
-    pthread_mutex_lock(&bookLock); // lock for thread safety
+    pthread_mutex_lock(&bookLock); 
 
-    std::cout << "\n===== ORDER BOOK (" << symbol << ") =====\n";
+    cout << "\n ORDER BOOK (" << symbol << ") \n";
 
-    // --- BUY SIDE ---
-    std::cout << "--- BUY SIDE ---\n";
-    double price = buyTree->getHighestKey(); // start from highest price
+
+    cout << " BUY SIDE \n";
+    // BUY SIDE - traverse from highest to lowest
+    double price = buyTree->getHighestKey();
     double lowest = buyTree->getLowestKey();
 
     while (price != -1 && price >= lowest) {
         OrderQueue* q = buyTree->search(price);
-        if (q) {
-            q->printQueue(); // prints all orders at this price
+        if (q && q->getSize() > 0) {
+            q->printQueue();
         }
-        double nextPrice = buyTree->nextKey(price); // get next lower price
-        if (nextPrice == price || nextPrice == -1) break; 
+        double nextPrice = buyTree->prevKey(price);  
+        if (nextPrice == price || nextPrice == -1) break;
         price = nextPrice;
     }
 
-    // --- SELL SIDE ---
-    std::cout << "--- SELL SIDE ---\n";
+    //  SELL SIDE 
+    cout << " SELL SIDE \n";
     price = sellTree->getLowestKey(); // start from lowest price
     double highest = sellTree->getHighestKey();
 
     while (price != -1 && price <= highest) {
         OrderQueue* q = sellTree->search(price);
         if (q) {
-            q->printQueue(); // prints all orders at this price
+            q->printQueue(); 
         }
         double nextPrice = sellTree->nextKey(price); // get next higher price
         if (nextPrice == price || nextPrice == -1) break;
@@ -219,7 +227,6 @@ void OrderBook::printOrderBook() {
 
     pthread_mutex_unlock(&bookLock);
 }
-
 
 string OrderBook:: getSymbol() const
 {
