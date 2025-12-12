@@ -18,7 +18,7 @@ OrderBook::~OrderBook() {
     delete sellTree;
     pthread_mutex_destroy(&bookLock);
 }
-
+/*
 vector<Trade> OrderBook::addOrder(Order* order) {
     pthread_mutex_lock(&bookLock);
     vector<Trade> trades;
@@ -107,6 +107,117 @@ vector<Trade> OrderBook::addOrder(Order* order) {
         }
     }
     
+    pthread_mutex_unlock(&bookLock);
+    return trades;
+}
+*/
+vector<Trade> OrderBook::addOrder(Order* order) {
+    pthread_mutex_lock(&bookLock);
+    vector<Trade> trades;
+
+    bool isBuy = order->getSide();
+
+    if (isBuy) {
+        // BUY order: match with best SELL orders
+        Order* bestSell = sellTree->getBestSell();
+
+        while (bestSell != nullptr &&
+               order->getRemainingQuantity() > 0 &&
+               bestSell->price <= order->price) {
+
+            // Skip self-trade
+            if (order->userID == bestSell->userID) {
+                double nextPrice = sellTree->nextKey(bestSell->price);
+                bestSell = (nextPrice != -1) ? sellTree->search(nextPrice)->peek() : nullptr;
+                if (!bestSell) break;
+                continue;
+            }
+
+            int matchedQty = std::min(order->getRemainingQuantity(), bestSell->getRemainingQuantity());
+
+            Trade trade(
+                100 + trades.size(),
+                order,
+                bestSell,
+                matchedQty,
+                bestSell->price
+            );
+
+            trades.push_back(trade);
+
+            // Update quantities
+            order->reduceRemainingQty(matchedQty);
+            bestSell->reduceRemainingQty(matchedQty);
+
+            // Update statuses
+            order->status = (order->getRemainingQuantity() == 0) ? "FILLED" : "PARTIAL_FILL";
+            bestSell->status = (bestSell->getRemainingQuantity() == 0) ? "FILLED" : "PARTIAL_FILL";
+
+            // Only dequeue if fully filled
+            if (bestSell->getRemainingQuantity() == 0) {
+                sellTree->search(bestSell->price)->dequeue();
+            }
+
+            // Peek next best sell
+            bestSell = sellTree->getBestSell();
+        }
+
+        // Add unfilled portion to BUY book
+        if (order->getRemainingQuantity() > 0) {
+            buyTree->insert(order->price, order);
+        }
+
+    } else {
+        // SELL order: match with best BUY orders
+        Order* bestBuy = buyTree->getBest();
+
+        while (bestBuy != nullptr &&
+               order->getRemainingQuantity() > 0 &&
+               bestBuy->price >= order->price) {
+
+            // Skip self-trade
+            if (order->userID == bestBuy->userID) {
+                double prevPrice = buyTree->prevKey(bestBuy->price);
+                bestBuy = (prevPrice != -1) ? buyTree->search(prevPrice)->peek() : nullptr;
+                if (!bestBuy) break;
+                continue;
+            }
+
+            int matchedQty = std::min(order->getRemainingQuantity(), bestBuy->getRemainingQuantity());
+
+            Trade trade(
+                200 + trades.size(),
+                bestBuy,
+                order,
+                matchedQty,
+                bestBuy->price
+            );
+
+            trades.push_back(trade);
+
+            // Update quantities
+            order->reduceRemainingQty(matchedQty);
+            bestBuy->reduceRemainingQty(matchedQty);
+
+            // Update statuses
+            order->status = (order->getRemainingQuantity() == 0) ? "FILLED" : "PARTIAL_FILL";
+            bestBuy->status = (bestBuy->getRemainingQuantity() == 0) ? "FILLED" : "PARTIAL_FILL";
+
+            // Only dequeue if fully filled
+            if (bestBuy->getRemainingQuantity() == 0) {
+                buyTree->search(bestBuy->price)->dequeue();
+            }
+
+            // Peek next best buy
+            bestBuy = buyTree->getBest();
+        }
+
+        // Add unfilled portion to SELL book
+        if (order->getRemainingQuantity() > 0) {
+            sellTree->insert(order->price, order);
+        }
+    }
+
     pthread_mutex_unlock(&bookLock);
     return trades;
 }

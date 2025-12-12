@@ -288,24 +288,51 @@ void testBasicMatching(MatchingEngine& engine) {
 void testPartialFills(MatchingEngine& engine) {
     cout << "Test 2: Partial Order Fills\n";
     cout << "Testing order that fills across multiple counter-orders\n";
+    cout <<"Before";
     engine.printPortfolio("alice");
     cout <<"\n\n";
     engine.printPortfolio("bob");
-
-    Order* buy = engine.placeOrder("alice", "AAPL", "BUY", 151.0, 200);
-    cout << "  Placed BUY 200 @ $151\n";
     
+    Order* sell = engine.placeOrder("bob","AAPL","SELL",151.0,200);
+    cout <<"PLaced Sell Order 200 @ $151\n";
+    
+    Order* buy1 = engine.placeOrder("alice", "AAPL", "BUY", 151.0, 80);
+    cout << "  Matched SELL 80 @ $151\n";
+    engine.printPortfolio("alice");
+    Order* buy2 = engine.placeOrder("alice", "AAPL", "BUY", 151.0, 120);
+    cout << "  Matched SELL 120 @ $151\n";
+    cout << " Sell Order Status: "<<sell->status;
+    
+    //cout << "  Buy order remaining: " << buy->remainingQty << "\n";
+    //cout << "  Buy order status: " << buy->status << "\n";
+    //cout << "  Result: " << (buy->status == "FILLED" ? "PASS" : "FAIL") << "\n\n";
+    cout <<"After\n";
+    engine.printPortfolio("alice");
+    engine.printPortfolio("bob");
+
+    engine.printOrderBook("AAPL");
+    
+    /*
+    Order* buy = engine.placeOrder("alice", "AAPL", "BUY", 151.0, 200);
+
+    cout << "  Placed BUY 200 @ $151\n";
+    cout << "After\n";
+    engine.printPortfolio("alice");
+
     Order* sell1 = engine.placeOrder("bob", "AAPL", "SELL", 151.0, 80);
     cout << "  Matched SELL 80 @ $151\n";
-    
+    engine.printPortfolio("alice");
     Order* sell2 = engine.placeOrder("bob", "AAPL", "SELL", 151.0, 120);
     cout << "  Matched SELL 120 @ $151\n";
     
     cout << "  Buy order remaining: " << buy->remainingQty << "\n";
     cout << "  Buy order status: " << buy->status << "\n";
     cout << "  Result: " << (buy->status == "FILLED" ? "PASS" : "FAIL") << "\n\n";
+    engine.printOrderBook("AAPL");
     engine.printPortfolio("bob");
     engine.printPortfolio("alice");
+    */
+
 }
 
 void testPriceTimePriority(MatchingEngine& engine) {
@@ -329,15 +356,18 @@ void testPriceTimePriority(MatchingEngine& engine) {
 void testCancellation(MatchingEngine& engine) {
     cout << "Test 4: Order Cancellation\n";
     cout << "Testing order cancellation and cash refund\n";
-    
+    cout <<"Before Order\n";
+    engine.printPortfolio("alice");
     double cashBefore = engine.getCashBalance("alice");
     
     Order* buy = engine.placeOrder("alice", "AAPL", "BUY", 149.0, 50);
     double cashAfterOrder = engine.getCashBalance("alice");
-    
+    cout <<"After Order\n";
+    engine.printPortfolio("alice");
     engine.cancelOrder(buy->orderID, "alice");
     double cashAfterCancel = engine.getCashBalance("alice");
-    
+    cout <<"After Cancel\n";
+    engine.printPortfolio("alice");
     cout << "  Cash before: $" << cashBefore << "\n";
     cout << "  Cash after order: $" << cashAfterOrder << "\n";
     cout << "  Cash after cancel: $" << cashAfterCancel << "\n";
@@ -448,5 +478,6 @@ void testConcurrency(MatchingEngine& engine) {
     
     cout << "  Result: PASS\n\n";
 }
+
 
 //g++ -std=c++17 -pthread Stock_Market_Matching_Engine/main.cpp Stock_Market_Matching_Engine/core/User.cpp Stock_Market_Matching_Engine/core/Order.cpp Stock_Market_Matching_Engine/core/Trade.cpp Stock_Market_Matching_Engine/data_structures/BTree.cpp Stock_Market_Matching_Engine/data_structures/OrderQueue.cpp Stock_Market_Matching_Engine/engine/MatchingEngine.cpp Stock_Market_Matching_Engine/engine/OrderBook.cpp -o main

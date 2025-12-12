@@ -22,6 +22,7 @@ private:
     vector<int> activeOrders;
     
 public:
+    User();
     User(const string& uid, double cash);
     
     // Cash management
@@ -48,6 +49,8 @@ public:
     
     // Display
     string toString() const;
+
+    User clone() const { return *this; }
 
 
 

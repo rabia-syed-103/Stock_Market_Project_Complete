@@ -36,6 +36,7 @@ public:
     double getPrice() const;        // Fixed: added const
     string getSymbol() const;       // Added: useful getter
     int getOrderID() const;         // Added: useful getter
+    void reduceRemainingQty(int qty);
 };
 
 #endif

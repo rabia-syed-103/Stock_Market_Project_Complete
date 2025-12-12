@@ -64,3 +64,14 @@ string Order::getSymbol() const {
 int Order::getOrderID() const {
     return this->orderID;
 }
+
+void Order::reduceRemainingQty(int qty) {
+    remainingQty -= qty;
+    if (remainingQty <= 0) {
+        remainingQty = 0;
+        status = "FILLED";
+    } else {
+        status = "PARTIAL_FILL";
+    }
+}
+

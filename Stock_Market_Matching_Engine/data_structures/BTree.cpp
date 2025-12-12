@@ -133,7 +133,7 @@ void BTree::splitChild(BTreeNode* parent, int i, BTreeNode* y) {
     
     parent->numKeys++;
 }
-
+/*
 Order* BTree::getBest() {
     if (!root || root->numKeys == 0) return nullptr;
     
@@ -148,13 +148,46 @@ Order* BTree::getBest() {
         
         if (q && q->getSize() > 0) {
             Order* o1 = q->peek();
-            q->dequeue();
             return o1;
         }
     }
     
     return nullptr;
 }
+*/
+
+Order* BTree::getBest() {
+    if (!root || root->numKeys == 0) return nullptr;
+
+    double price = getHighestKey();
+    double lowest = getLowestKey();
+    if (price == -1 || lowest == -1) return nullptr;
+
+    // Scan from highest down to lowest using prevKey
+    while (price != -1 && price >= lowest) {
+        OrderQueue* q = search(price);
+        if (q && q->getSize() > 0) {
+            // Clean up any zero-remaining orders at front
+            while (q->getSize() > 0) {
+                Order* o = q->peek();
+                if (!o) { q->dequeue(); continue; }
+                if (o->getRemainingQuantity() <= 0) {
+                    q->dequeue(); // remove exhausted order
+                    continue;
+                }
+                // Found valid top-of-queue order
+                return o;
+            }
+            // queue exhausted, continue scanning to next lower price
+        }
+        double prev = prevKey(price);
+        if (prev == price) break;
+        price = prev;
+    }
+
+    return nullptr;
+}
+
 
 double BTree::getLowestKey() {
     if (!root || root->numKeys == 0) return -1;
@@ -178,6 +211,7 @@ double BTree::getHighestKey() {
     return curr->keys[curr->numKeys - 1]; // largest key in rightmost leaf
 }
 
+/*
 double BTree::nextKey(double price) {
     if (!root) return -1;
 
@@ -198,7 +232,31 @@ double BTree::nextKey(double price) {
 
     return successor;
 }
+*/
+double BTree::nextKey(double price) {
+    if (!root || root->numKeys == 0) return -1;
 
+    BTreeNode* curr = root;
+    double successor = -1;
+
+    while (curr != nullptr) {
+        int i = 0;
+        while (i < curr->numKeys && curr->keys[i] <= price) i++;
+
+        if (i < curr->numKeys) {
+            successor = curr->keys[i]; // potential next key
+        }
+
+        if (curr->isLeaf) break;
+        curr = curr->children[i];
+    }
+
+    // If successor equals price or wasn't found, return -1
+    if (successor <= price) return -1;
+    return successor;
+}
+
+/*
 Order* BTree::getBestSell() {
     if (!root) return nullptr;
     
@@ -214,6 +272,39 @@ Order* BTree::getBestSell() {
     return queue->peek();
 }
 
+*/
+
+Order* BTree::getBestSell() {
+    if (!root || root->numKeys == 0) return nullptr;
+
+    double price = getLowestKey();
+    double highest = getHighestKey();
+    if (price == -1 || highest == -1) return nullptr;
+
+    // Scan from lowest up to highest using nextKey
+    while (price != -1 && price <= highest) {
+        OrderQueue* q = search(price);
+        if (q && q->getSize() > 0) {
+            // Clean up any zero-remaining orders at front
+            while (q->getSize() > 0) {
+                Order* o = q->peek();
+                if (!o) { q->dequeue(); continue; }
+                if (o->getRemainingQuantity() <= 0) {
+                    q->dequeue(); // remove exhausted order
+                    continue;
+                }
+                // Found valid top-of-queue order
+                return o;
+            }
+            // queue exhausted, continue scanning
+        }
+        double nxt = nextKey(price);
+        if (nxt == price) break;
+        price = nxt;
+    }
+
+    return nullptr;
+}
 
 double BTree::prevKey(double price) {
     if (!root) return -1;

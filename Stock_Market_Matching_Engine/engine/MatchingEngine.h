@@ -10,6 +10,7 @@
 #include "OrderBook.h"
 #include "../core/User.h"
 #include "../data_structures/MyHashMap.h"
+#include <memory>
 
 using namespace std;
 
@@ -72,233 +73,238 @@ public:
         
         return users->get(userID);
     }
-  
+
     Order* placeOrder(string userID, string symbol, 
-                      string side, double price, int quantity) {
-        
-        cout <<"No issue";
-        // Step 1: Validate user and resources
-        {
-            lock_guard<mutex> lock(userLock);
-            
-            if (!users->contains(userID)) {
-                cout << "Error: User " << userID << " not found\n";
+                string side, double price, int quantity) {
+
+    // Step 1: Validate user and reserve resources + allocate order ID
+    Order* order = nullptr;
+    {
+        scoped_lock lock(engineLock, userLock);
+
+        if (!users->contains(userID)) {
+            cout << "Error: User " << userID << " not found\n";
+            return nullptr;
+        }
+
+        User* user = users->get(userID);
+
+        if (side == "BUY") {
+            double cost = price * quantity;
+            if (!user->deductCash(cost)) {
+                cout << "Error: Insufficient funds. Need $" << cost 
+                    << ", have $" << user->getCashBalance() << "\n";
                 return nullptr;
             }
-            
-            User* user = users->get(userID);
-            
-            if (side == "BUY") {
-                double cost = price * quantity;
-                cout <<"No Issue 2";
-                if (!user->deductCash(cost)) {
-                    cout << "Error: Insufficient funds. Need $" << cost 
-                         << ", have $" << user->getCashBalance() << "\n";
-                    return nullptr;
-                }
-                
-            } else {  // SELL
-                // Check if user has enough shares
-                if (user->getStockQuantity(symbol) < quantity) {
-                    cout << "Error: Insufficient shares of " << symbol << "\n";
-                    return nullptr;
-                }
-                
-                // Remove shares immediately (they're locked for this order)
-                if (!user->removeStock(symbol, quantity)) {
-                    cout << "Error: Failed to lock shares for sell order\n";
-                    return nullptr;
-                }
+        } else { // SELL
+            if (user->getStockQuantity(symbol) < quantity) {
+                cout << "Error: Insufficient shares of " << symbol << "\n";
+                return nullptr;
+            }
+            if (!user->removeStock(symbol, quantity)) {
+                cout << "Error: Failed to lock shares for sell order\n";
+                return nullptr;
             }
         }
-        
-        // Step 2: Create order
-        // Step 1: Validate user and reserve resources + allocate order ID and register order atomically
-        Order* order = nullptr;
+
+        // Allocate order ID and create order
+        int orderID = nextOrderID++;
+        order = new Order(orderID, userID, symbol, side, price, quantity);
+        allOrders->insert(orderID, order);
+
+        // Register active order for user
+        user->addActiveOrder(orderID);
+    }
+
+    // Step 2: Get order book
+    OrderBook* book;
+    {
+        lock_guard<mutex> lock(engineLock);
+        if (!orderBooks->contains(symbol)) {
+            book = new OrderBook(symbol);
+            orderBooks->insert(symbol, book);
+        } else {
+            book = orderBooks->get(symbol);
+        }
+    }
+
+    // Step 3: Add to orderbook and get trades
+    vector<Trade> trades = book->addOrder(order);
+
+    // Step 4: Process trades
+    for (Trade& trade : trades) {
         {
-            // Acquire engineLock first, then userLock to preserve consistent ordering
-            std::scoped_lock lock(engineLock, userLock);
+            lock_guard<mutex> lock(engineLock);
+            trade.tradeID = nextTradeID++;
+        }
 
-            if (!users->contains(userID)) {
-                cout << "Error: User " << userID << " not found\n";
-                return nullptr;
+        {
+            lock_guard<mutex> lock(userLock);
+            if (!users->contains(trade.buyUserID) || !users->contains(trade.sellUserID))
+                continue;
+
+            User* buyer = users->get(trade.buyUserID);
+            User* seller = users->get(trade.sellUserID);
+
+            // Transfer shares to buyer (cash already deducted in Step 1)
+            buyer->addStock(symbol, trade.quantity);
+
+            // Add cash to seller (shares already removed when they placed SELL order)
+            seller->addCash(trade.price * trade.quantity);
+
+            cout << "Trade executed: " << trade.toString() << "\n";
+            
+            // Update order status
+              
+            if(order->side == "BUY")
+            {
+            order->remainingQty -= trade.quantity;
+          
+            if (order->getRemainingQuantity() == 0)
+                order->status = "FILLED";
+            else
+                order->status = "PARTIAL_FILL";
             }
+           // if(order->side == "SELL")
 
+        }
+
+        {
+            lock_guard<mutex> lock(tradeLock);
+            tradeHistory.push_back(trade);
+        }
+    }
+
+    // Step 5: Remove from active orders if filled
+    if (order->isFilled()) {
+        lock_guard<mutex> lock(userLock);
+        if (users->contains(userID)) {
             User* user = users->get(userID);
+            user->removeActiveOrder(order->getOrderID());
+        }
+    }
 
-            if (side == "BUY") {
-                double cost = price * quantity;
-                if (!user->deductCash(cost)) {
-                    cout << "Error: Insufficient funds. Need $" << cost 
-                        << ", have $" << user->getCashBalance() << "\n";
-                    return nullptr;
-                }
+    return order;
+}
+
+
+/*
+void cancelOrder(int orderID, const string& userID) {
+    Order* order = nullptr;
+    
+    // Step 1: Lock engine and get the order
+    {
+        std::scoped_lock lock(engineLock, userLock);
+
+        if (!allOrders->contains(orderID)) {
+            std::cout << "Error: Order " << orderID << " not found\n";
+            return;
+        }
+
+        order = allOrders->get(orderID);
+
+        if (order->userID != userID) {
+            std::cout << "Error: Order " << orderID << " does not belong to " << userID << "\n";
+            return;
+        }
+    }
+
+    // Step 2: Cancel in order book (removes from BTree)
+    if (orderBooks->contains(order->getSymbol())) {
+        OrderBook* book = orderBooks->get(order->getSymbol());
+        book->cancelOrder(orderID);
+    }
+
+    // Step 3: Refund only remaining unfilled portion
+    {
+        std::scoped_lock lock(userLock);
+
+        if (!users->contains(userID)) return;
+
+        User* user = users->get(userID);
+
+        int remaining = order->getRemainingQuantity(); // IMPORTANT: remainingQty is always correct
+        if (remaining > 0) {
+            if (order->side == "BUY") {
+                user->addCash(order->price * remaining); // refund exact unfilled cash
             } else { // SELL
-                if (user->getStockQuantity(symbol) < quantity) {
-                    cout << "Error: Insufficient shares of " << symbol << "\n";
-                    return nullptr;
-                }
-                if (!user->removeStock(symbol, quantity)) {
-                    cout << "Error: Failed to lock shares for sell order\n";
-                    return nullptr;
-                }
-            }
-
-            // allocate order id and create order under engineLock (already held)
-            int orderID = nextOrderID++;
-            order = new Order(orderID, userID, symbol, side, price, quantity);
-            allOrders->insert(orderID, order);
-
-            // register active order for user (we already hold userLock)
-            user->addActiveOrder(orderID);
-        }
-
-        // Step 2: Get order book (engineLock only)
-        OrderBook* book;
-        {
-            lock_guard<mutex> lock(engineLock);
-            if (!orderBooks->contains(symbol)) {
-                book = new OrderBook(symbol);
-                orderBooks->insert(symbol, book);
-            } else {
-                book = orderBooks->get(symbol);
+                user->addStock(order->getSymbol(), remaining); // return unsold shares
             }
         }
 
-        // Step 3: Add to orderbook and perform matching (book->addOrder may return trades)
-        vector<Trade> trades = book->addOrder(order);
+        // Step 4: Remove from active orders
+        user->removeActiveOrder(orderID);
+    }
 
-   
-        
-        // Step 6: Process trades
-        for (Trade& trade : trades) {
-            {
-                lock_guard<mutex> lock(engineLock);
-                trade.tradeID = nextTradeID++;
-            }
-            
-            {
-                lock_guard<mutex> lock(userLock);
-                
-                if (!users->contains(trade.buyUserID) || !users->contains(trade.sellUserID)) {
-                    continue;
-                }
-                
-                User* buyer = users->get(trade.buyUserID);
-                User* seller = users->get(trade.sellUserID);
-                
-                // For BUY orders: shares were already removed from seller in their SELL order
-                // Now transfer to buyer
-                buyer->addStock(symbol, trade.quantity);
-                
-                // For SELL orders: shares were removed when order was placed
-                // Now just transfer cash to seller
-                seller->addCash(trade.price * trade.quantity);
-                
-                cout << "Trade executed: " << trade.toString() << "\n";
-            }
-            
-            {
-                lock_guard<mutex> lock(tradeLock);
-                tradeHistory.push_back(trade);
-            }
+    // Step 5: Mark order as cancelled
+    order->status = "CANCELLED";
+    std::cout << "Cancelled OrderID " << orderID 
+              << " from " << order->side << " side, Refund processed.\n";
+}
+*/
+
+void cancelOrder(int orderID, const string& userID) {
+    Order* order = nullptr;
+    int remaining = 0;  // Save this early
+    string side;
+    string symbol;
+    double price;
+    
+    // Step 1: Lock engine and get the order info
+    {
+        std::scoped_lock lock(engineLock, userLock);
+
+        if (!allOrders->contains(orderID)) {
+            std::cout << "Error: Order " << orderID << " not found\n";
+            return;
+        }
+
+        order = allOrders->get(orderID);
+
+        if (order->userID != userID) {
+            std::cout << "Error: Order " << orderID << " does not belong to " << userID << "\n";
+            return;
         }
         
-        // Step 7: Handle unfilled portion
-        if (order->status != "FILLED") {
-            lock_guard<mutex> lock(userLock);
-            
-            if (!users->contains(userID)) {
-                return order;
-            }
-            
-            User* user = users->get(userID);
-            
+        // IMPORTANT: Save values BEFORE cancelling from order book
+        remaining = order->getRemainingQuantity();
+        side = order->side;
+        symbol = order->getSymbol();
+        price = order->price;
+    }
+
+    // Step 2: Cancel in order book (this might modify the order object)
+    if (orderBooks->contains(symbol)) {
+        OrderBook* book = orderBooks->get(symbol);
+        book->cancelOrder(orderID);
+    }
+
+    // Step 3: Refund using saved values
+    {
+        std::scoped_lock lock(userLock);
+
+        if (!users->contains(userID)) return;
+
+        User* user = users->get(userID);
+        
+        if (remaining > 0) {
             if (side == "BUY") {
-                // Refund locked cash for unfilled BUY orders
-                user->addCash(price * order->getRemainingQuantity());
-            } else {
-                // Return unsold shares
-                user->addStock(symbol, order->getRemainingQuantity());
+                user->addCash(price * remaining);
+            } else { // SELL
+                user->addStock(symbol, remaining);
             }
         }
-        
-        // Step 8: Remove from active orders if filled
-        if (order->isFilled()) {
-            lock_guard<mutex> lock(userLock);
-            if (users->contains(userID)) {
-                User* user = users->get(userID);
-                user->removeActiveOrder(order->getOrderID());
-            }
-        }
-        
-        return order;
+
+        // Step 4: Remove from active orders
+        user->removeActiveOrder(orderID);
     }
-    
-    void cancelOrder(int orderID, string userID) {
-        Order* order;
-        string symbol;
-        string side;
-        int remaining;
-        double price;
-        
-        // Get order info
-        {
-            lock_guard<mutex> lock(engineLock);
-            
-            if (!allOrders->contains(orderID)) {
-                cout << "Error: Order " << orderID << " not found\n";
-                return;
-            }
-            
-            order = allOrders->get(orderID);
-            
-            if (order->userID != userID) {
-                cout << "Error: Order " << orderID << " does not belong to " << userID << "\n";
-                return;
-            }
-            
-            symbol = order->getSymbol();
-            side = order->side;
-            remaining = order->getRemainingQuantity();
-            price = order->getPrice();
-        }
-        
-        // Cancel in order book
-        {
-            lock_guard<mutex> lock(engineLock);
-            
-            if (orderBooks->contains(symbol)) {
-                OrderBook* book = orderBooks->get(symbol);
-                book->cancelOrder(orderID);
-            }
-        }
-        
-        // Refund user
-   
-        {
-            std::scoped_lock lock(engineLock, userLock);
 
-            if (!users->contains(userID)) {
-                return;
-            }
-
-            User* user = users->get(userID);
-
-            if (remaining > 0) {
-                if (side == "BUY") {
-                    user->addCash(price * remaining);
-                } else {
-                    user->addStock(symbol, remaining);
-                }
-            }
-
-            user->removeActiveOrder(orderID);
-        }
-
-    }
-    
-    vector<Trade> getAllTrades() {
+    // Step 5: Mark order as cancelled
+    order->status = "CANCELLED";
+    std::cout << "Cancelled OrderID " << orderID 
+              << " from " << side << " side, Refund processed.\n";
+}
+vector<Trade> getAllTrades() {
         lock_guard<mutex> lock(tradeLock);
         return tradeHistory;
     }
@@ -407,58 +413,81 @@ public:
         
         return userTrades;
     }
-    void printPortfolio(string userID) {
-        User* user = getUser(userID);
-        if (!user) {
+   
+void printPortfolio(const string& userID) {
+    // Local copies for printing
+    double balance = 0.0;
+    vector<StockHolding> holdings;
+    vector<int> activeOrderIDs;
+    vector<Trade> userTrades;
+
+    // Acquire locks in the global order (engineLock then userLock)
+    {
+        std::scoped_lock lock(engineLock, userLock);
+
+        // get user pointer directly from users hashmap (we hold userLock)
+        if (!users->contains(userID)) {
             cout << "User not found\n";
             return;
         }
-        
-        // Get all data
-        double balance = user->getCashBalance();
-        vector<StockHolding> holdings = user->getAllHoldings();
-        vector<Order*> activeOrders = getActiveOrders(userID);
-        vector<Trade> trades = getUserTrades(userID);
-        
-        cout << "\n┌────────────────────────────────────────┐\n";
-        cout << "│  PORTFOLIO: " << userID;
-        for (size_t i = userID.length(); i < 27; i++) cout << " ";
-        cout << "│\n";
-        cout << "├────────────────────────────────────────┤\n";
-        
-        // Cash balance
-        cout << "│  Cash Balance: $" << fixed << setprecision(2) << balance;
-        string balStr = to_string((int)balance);
-        for (size_t i = balStr.length() + 4; i < 28; i++) cout << " ";
-        cout << "│\n";
-        cout << "├────────────────────────────────────────┤\n";
-        
-        // Holdings
-        cout << "│  Holdings:                             │\n";
-        if (holdings.empty()) {
-            cout << "│    No stocks owned                     │\n";
-        } else {
-            for (const auto& holding : holdings) {
-                cout << "│    " << holding.symbol << ": " << holding.quantity << " shares";
-                // Calculate padding
-                int used = 7 + holding.symbol.length() + to_string(holding.quantity).length();
-                for (int i = used; i < 39; i++) cout << " ";
-                cout << "│\n";
+        User* user = users->get(userID);
+
+        // Copy user state (these return simple copies)
+        balance = user->getCashBalance();
+        holdings = user->getAllHoldings();
+        activeOrderIDs = user->getActiveOrderIDs();
+
+        // Copy trades while still holding engineLock? tradeHistory is protected by tradeLock,
+        // so we can't safely read it here without holding tradeLock. We'll copy trades outside.
+    }
+
+    // Copy trades under tradeLock separately (no nested locks with engine/user)
+    {
+        std::lock_guard<std::mutex> tlock(tradeLock);
+        for (const Trade &tr : tradeHistory) {
+            if (tr.buyUserID == userID || tr.sellUserID == userID) {
+                userTrades.push_back(tr);
             }
         }
-        cout << "├────────────────────────────────────────┤\n";
-        
-        // Active orders
-        cout << "│  Active Orders: " << activeOrders.size();
-        for (size_t i = to_string(activeOrders.size()).length(); i < 23; i++) cout << " ";
-        cout << "│\n";
-        
-        // Total trades
-        cout << "│  Total Trades: " << trades.size();
-        for (size_t i = to_string(trades.size()).length(); i < 24; i++) cout << " ";
-        cout << "│\n";
-        cout << "└────────────────────────────────────────┘\n";
     }
+
+    // Now print using the local copies (no locks held)
+    cout << "\n┌────────────────────────────────────────┐\n";
+    cout << "│  PORTFOLIO: " << userID;
+    for (size_t i = userID.length(); i < 27; i++) cout << " ";
+    cout << "│\n";
+    cout << "├────────────────────────────────────────┤\n";
+
+    cout << "│  Cash Balance: $" << fixed << setprecision(2) << balance;
+    string balStr = to_string((int)balance);
+    for (size_t i = balStr.length() + 4; i < 28; i++) cout << " ";
+    cout << "│\n";
+    cout << "├────────────────────────────────────────┤\n";
+
+    cout << "│  Holdings:                             │\n";
+    if (holdings.empty()) {
+        cout << "│    No stocks owned                     │\n";
+    } else {
+        for (const auto& holding : holdings) {
+            cout << "│    " << holding.symbol << ": " << holding.quantity << " shares";
+            int used = 7 + holding.symbol.length() + to_string(holding.quantity).length();
+            for (int i = used; i < 39; i++) cout << " ";
+            cout << "│\n";
+        }
+    }
+    cout << "├────────────────────────────────────────┤\n";
+
+    cout << "│  Active Orders: " << activeOrderIDs.size();
+    for (size_t i = to_string(activeOrderIDs.size()).length(); i < 23; i++) cout << " ";
+    cout << "│\n";
+
+    cout << "│  Total Trades: " << userTrades.size();
+    for (size_t i = to_string(userTrades.size()).length(); i < 24; i++) cout << " ";
+    cout << "│\n";
+    cout << "└────────────────────────────────────────┘\n";
+}
+
+
 };
 
 #endif

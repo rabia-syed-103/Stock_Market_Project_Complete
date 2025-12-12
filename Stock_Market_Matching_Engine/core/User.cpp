@@ -1,6 +1,9 @@
 #include "User.h"
 #include <iostream>
 
+
+User:: User()
+{}
 User::User(const std::string& uid, double cash)
     : userID(uid), cashBalance(cash) {
     // Vectors start empty, will grow dynamically
