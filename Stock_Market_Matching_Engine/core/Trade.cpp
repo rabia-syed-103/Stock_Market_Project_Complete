@@ -1,26 +1,32 @@
 #include "Trade.h"
 #include <stdexcept>
-
-Trade:: Trade(int tid,const Order* o1,const Order* o2, int qty, double prc)
+#include <iostream>
+Trade::Trade()
 {
-    if(o1->symbol != o2->symbol)
-         throw runtime_error("Cannot trade orders with different symbols");
-    if (o1->side == "BUY") {
-        buyOrderID = o1->orderID;
-        buyUserID  = o1->userID;
-        sellOrderID = o2->orderID;
-        sellUserID  = o2->userID;
+}
+
+Trade::Trade(int tid, const Order& o1, const Order& o2, int qty, double prc)
+{
+    std::cout << "Reached Here!";
+    if (o1.symbol != o2.symbol)
+        throw runtime_error("Cannot trade orders with different symbols");
+
+    if (o1.side == "BUY") {
+        buyOrderID  = o1.orderID;
+        buyUserID   = o1.userID;
+        sellOrderID = o2.orderID;
+        sellUserID  = o2.userID;
     } else {
-        buyOrderID = o2->orderID;
-        buyUserID  = o2->userID;
-        sellOrderID = o1->orderID;
-        sellUserID  = o1->userID;
+        buyOrderID  = o2.orderID;
+        buyUserID   = o2.userID;
+        sellOrderID = o1.orderID;
+        sellUserID  = o1.userID;
     }
 
-    tradeID = tid;
-    symbol = o1->symbol;
-    price = prc;
-    quantity = qty;
+    tradeID   = tid;
+    symbol    = o1.symbol;
+    price     = prc;
+    quantity  = qty;
     timestamp = std::time(nullptr);
 }
 

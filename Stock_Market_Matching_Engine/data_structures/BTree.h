@@ -1,10 +1,8 @@
-// btree.h
 #ifndef BTREE_H
 #define BTREE_H
 
-#include <iostream>
 #include "BTreeNode.h"
-using namespace std;
+#include "../storage/DiskTypes.h"
 
 class BTree {
 private:
@@ -13,21 +11,26 @@ private:
 
     void traverse(BTreeNode* node);
     BTreeNode* search(BTreeNode* node, double key);
-    void insertNonFull(BTreeNode* node, double key, Order* order);
+    void insertNonFull(BTreeNode* node, double key, DiskOffset offset);
     void splitChild(BTreeNode* parent, int i, BTreeNode* child);
 
 public:
     BTree(int _t);
-    void insert(double key, Order* order);
+
+    void insert(double key, DiskOffset offset);
     OrderQueue* search(double key);
+
     void print();
-    Order* getBest(); // max buy or min sell
+
+    DiskOffset getBest();       // BUY side
+    DiskOffset getBestSell();   // SELL side
+
     double getLowestKey();
     double getHighestKey();
     double nextKey(double price);
-    Order* getBestSell();
-    double prevKey(double price);  
-
+    double prevKey(double price);
+    //static void freeBTreeNode(BTreeNode* node);
+    ~BTree();
 };
 
 #endif

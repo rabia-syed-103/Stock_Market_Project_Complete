@@ -47,49 +47,52 @@ OrderQueue* BTree::search(double key) {
 }
 
 // Insert
-void BTree::insert(double key, Order* order) {
+void BTree::insert(double key, DiskOffset offset)
+{
     BTreeNode* r = root;
     if (r->numKeys == MAX_KEYS) {
         BTreeNode* s = new BTreeNode(false);
         s->children[0] = r;
         root = s;
         splitChild(s, 0, r);
-        insertNonFull(s, key, order);
+        insertNonFull(s, key, offset);
     } else {
-        insertNonFull(r, key, order);
+        insertNonFull(r, key, offset);
     }
 }
 
-void BTree::insertNonFull(BTreeNode* node, double key, Order* order) {
+void BTree::insertNonFull(BTreeNode* node, double key, DiskOffset offset) {
     int i = node->numKeys - 1;
 
     if (node->isLeaf) {
-        
         while (i >= 0 && node->keys[i] > key) {
-            node->keys[i+1] = node->keys[i];
-            node->queues[i+1] = node->queues[i];
+            node->keys[i + 1] = node->keys[i];
+            node->queues[i + 1] = node->queues[i];
             i--;
         }
 
-        
-        if (i >= 0 && node->keys[i] == key) {
-            node->queues[i]->enqueue(order);
-        } else {
-            node->keys[i+1] = key;
-            node->queues[i+1] = new OrderQueue();
-            node->queues[i+1]->enqueue(order);
+           if (i >= 0 && node->keys[i] == key) {
+        std::cerr << "[DBG] BTree::insert: enqueuing offset="<<offset<<" at existing key="<<key<<"\n";
+        node->queues[i]->enqueue(offset);
+    } else {
+            std::cerr << "[DBG] BTree::insert: creating new queue at key="<<key<<" offset="<<offset<<"\n";
+            node->keys[i + 1] = key;
+            node->queues[i + 1] = new OrderQueue();
+            node->queues[i + 1]->enqueue(offset);
             node->numKeys++;
         }
     } else {
         while (i >= 0 && node->keys[i] > key) i--;
         i++;
+
         if (node->children[i]->numKeys == MAX_KEYS) {
             splitChild(node, i, node->children[i]);
             if (node->keys[i] < key) i++;
         }
-        insertNonFull(node->children[i], key, order);
+        insertNonFull(node->children[i], key, offset);
     }
 }
+
 
 void BTree::splitChild(BTreeNode* parent, int i, BTreeNode* y) {
     BTreeNode* z = new BTreeNode(y->isLeaf);
@@ -133,59 +136,25 @@ void BTree::splitChild(BTreeNode* parent, int i, BTreeNode* y) {
     
     parent->numKeys++;
 }
-/*
-Order* BTree::getBest() {
-    if (!root || root->numKeys == 0) return nullptr;
-    
-    BTreeNode* node = root;
-    while (!node->isLeaf) {
-        node = node->children[node->numKeys]; 
-    }
-    
-    // Use for loop instead of while to prevent infinite loop
-    for (int i = node->numKeys - 1; i >= 0; i--) {
-        OrderQueue* q = node->queues[i];
-        
-        if (q && q->getSize() > 0) {
-            Order* o1 = q->peek();
-            return o1;
-        }
-    }
-    
-    return nullptr;
-}
-*/
 
-Order* BTree::getBest() {
-    if (!root || root->numKeys == 0) return nullptr;
+DiskOffset BTree::getBest() {
+    if (!root || root->numKeys == 0) return 0;
 
     double price = getHighestKey();
     double lowest = getLowestKey();
-    if (price == -1 || lowest == -1) return nullptr;
 
-    // Scan from highest down to lowest using prevKey
     while (price != -1 && price >= lowest) {
         OrderQueue* q = search(price);
         if (q && q->getSize() > 0) {
-            // Clean up any zero-remaining orders at front
             while (q->getSize() > 0) {
-                Order* o = q->peek();
-                if (!o) { q->dequeue(); continue; }
-                if (o->getRemainingQuantity() <= 0) {
-                    q->dequeue(); // remove exhausted order
-                    continue;
-                }
-                // Found valid top-of-queue order
-                return o;
+                DiskOffset off = q->peek();
+                if (off == 0) { q->dequeue(); continue; }
+                return off;
             }
-            // queue exhausted, continue scanning to next lower price
         }
-        double prev = prevKey(price);
-        if (prev == price) break;
-        price = prev;
+        price = prevKey(price);
     }
-
-    return nullptr;
+    return 0;
 }
 
 
@@ -211,28 +180,7 @@ double BTree::getHighestKey() {
     return curr->keys[curr->numKeys - 1]; // largest key in rightmost leaf
 }
 
-/*
-double BTree::nextKey(double price) {
-    if (!root) return -1;
 
-    BTreeNode* curr = root;
-    double successor = -1;
-
-    while (curr != nullptr) {
-        int i = 0;
-        while (i < curr->numKeys && curr->keys[i] <= price) i++;
-
-        if (i < curr->numKeys) {
-            successor = curr->keys[i]; // potential next key
-        }
-
-        if (curr->isLeaf) break; 
-        curr = curr->children[i]; 
-    }
-
-    return successor;
-}
-*/
 double BTree::nextKey(double price) {
     if (!root || root->numKeys == 0) return -1;
 
@@ -256,54 +204,25 @@ double BTree::nextKey(double price) {
     return successor;
 }
 
-/*
-Order* BTree::getBestSell() {
-    if (!root) return nullptr;
-    
-    // Get lowest price in tree
-    double lowestPrice = getLowestKey();
-    if (lowestPrice == -1) return nullptr;
-    
-    // Get the queue at that price
-    OrderQueue* queue = search(lowestPrice);
-    if (!queue || queue->getSize() == 0) return nullptr;
-    
-    // Return first order in queue (FIFO)
-    return queue->peek();
-}
 
-*/
-
-Order* BTree::getBestSell() {
-    if (!root || root->numKeys == 0) return nullptr;
+DiskOffset BTree::getBestSell() {
+    if (!root || root->numKeys == 0) return 0;
 
     double price = getLowestKey();
     double highest = getHighestKey();
-    if (price == -1 || highest == -1) return nullptr;
 
-    // Scan from lowest up to highest using nextKey
     while (price != -1 && price <= highest) {
         OrderQueue* q = search(price);
         if (q && q->getSize() > 0) {
-            // Clean up any zero-remaining orders at front
             while (q->getSize() > 0) {
-                Order* o = q->peek();
-                if (!o) { q->dequeue(); continue; }
-                if (o->getRemainingQuantity() <= 0) {
-                    q->dequeue(); // remove exhausted order
-                    continue;
-                }
-                // Found valid top-of-queue order
-                return o;
+                DiskOffset off = q->peek();
+                if (off == 0) { q->dequeue(); continue; }
+                return off;
             }
-            // queue exhausted, continue scanning
         }
-        double nxt = nextKey(price);
-        if (nxt == price) break;
-        price = nxt;
+        price = nextKey(price);
     }
-
-    return nullptr;
+    return 0;
 }
 
 double BTree::prevKey(double price) {
@@ -334,3 +253,32 @@ double BTree::prevKey(double price) {
 
     return predecessor;
 }
+
+static void freeBTreeNode(BTreeNode* node) {
+    if (!node) return;
+    // delete queues owned by this node
+    for (int i = 0; i < node->numKeys; ++i) {
+        if (node->queues[i]) {
+            delete node->queues[i];
+            node->queues[i] = nullptr;
+        }
+    }
+    // if not leaf, recurse children
+    if (!node->isLeaf) {
+        for (int i = 0; i <= node->numKeys; ++i) {
+            if (node->children[i]) {
+                freeBTreeNode(node->children[i]);
+                node->children[i] = nullptr;
+            }
+        }
+    }
+    delete node;
+}
+
+BTree::~BTree() {
+    if (root) {
+        freeBTreeNode(root);
+        root = nullptr;
+    }
+}
+

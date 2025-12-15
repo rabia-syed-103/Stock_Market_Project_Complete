@@ -8,18 +8,18 @@
 #include "../core/Order.h"
 #include "../core/Trade.h"
 #include <algorithm>  
-
 using namespace std;
 class OrderBook {
 private:
-    std::string symbol;
+    string symbol;
     BTree* buyTree;   // Max
     BTree* sellTree;  // Min
     
     pthread_mutex_t bookLock;  
+    OrderStorage& orderStorage;
 
 public:
-    OrderBook(std::string sym);
+    OrderBook(std::string sym,OrderStorage& _order);
     ~OrderBook();
     
     // Core operations (thread-safe)
@@ -27,12 +27,14 @@ public:
     void cancelOrder(int orderID);
     
     // Query operations (thread-safe)
-    Order* getBestBid();
-    Order* getBestAsk();
+    Order getBestBid();
+    Order getBestAsk();
     void printOrderBook();
     string getOrderBookJSON();
     
     string getSymbol() const; 
+    void rebuildFromStorage() ;
+
 };
 
 #endif

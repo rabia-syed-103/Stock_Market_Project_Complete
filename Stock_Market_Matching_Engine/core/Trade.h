@@ -21,7 +21,8 @@ public:
     time_t timestamp;       // Trade execution time
 
     // Constructor
-    Trade(int tid,const Order* o1,const Order*  o2, int qty, double prc);
+    Trade();
+    Trade(int tid,const Order &o1,const Order &o2, int qty, double prc);
 
     // Displayable format
     string toString() const;

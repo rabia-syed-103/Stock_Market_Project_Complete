@@ -1,28 +1,23 @@
-// order_queue.cpp
-#include <iostream>
 #include "OrderQueue.h"
+#include "../storage/OrderStorage.h"
+#include <iostream>
+
 using namespace std;
 
-OrderQueue::OrderQueue() {
-    front = nullptr;
-    rear = nullptr;
-    size = 0;
-}
+OrderQueue::OrderQueue() : front(nullptr), rear(nullptr), size(0) {}
 
 OrderQueue::~OrderQueue() {
-    while (front != nullptr) {
+    while (front) {
         OrderNode* temp = front;
         front = front->next;
-        delete temp;  
+        delete temp;
     }
 }
 
-void OrderQueue::enqueue(Order* order) {
-    OrderNode* node = new OrderNode;
-    node->order = order;
-    node->next = nullptr;
+void OrderQueue::enqueue(DiskOffset orderOffset) {
+    OrderNode* node = new OrderNode{orderOffset, nullptr};
 
-    if (rear == nullptr) { // empty queue
+    if (!rear) {
         front = rear = node;
     } else {
         rear->next = node;
@@ -31,70 +26,71 @@ void OrderQueue::enqueue(Order* order) {
     size++;
 }
 
-Order* OrderQueue::dequeue() {
-    if (front == nullptr) return nullptr; // empty
+DiskOffset OrderQueue::dequeue() {
+    if (!front) return 0;  // Empty queue
+
     OrderNode* temp = front;
-    Order* order = temp->order;
+    DiskOffset offset = temp->orderOffset;
+
     front = front->next;
-    if (front == nullptr) rear = nullptr;
+    if (!front) rear = nullptr;
+
     delete temp;
     size--;
-    return order;
+    return offset;
 }
 
-Order* OrderQueue::peek() {
-    if (front == nullptr) return nullptr;
-    return front->order;
+DiskOffset OrderQueue::peek() const {
+    if (!front) return 0;
+    return front->orderOffset;
 }
 
-int OrderQueue::getSize() {
+int OrderQueue::getSize() const {
     return size;
 }
 
-void OrderQueue::printQueue() {
-    OrderNode* current = front;
-    while (current != nullptr) {
-        cout << current->order->toString() << endl;
-        current = current->next;
-    }
-}
-
-Order* OrderQueue::removeOrder(int orderID) {
+DiskOffset OrderQueue::removeOrder(int orderID, OrderStorage& storage) {
     OrderNode* prev = nullptr;
-    OrderNode* current = front;
+    OrderNode* curr = front;
 
-    while (current) {
-        if (current->order->orderID == orderID) {
-            Order* ord = current->order;
+    while (curr) {
+        Order order = storage.load(curr->orderOffset);
+        if (order.getOrderID() == orderID) {
+            DiskOffset removedOffset = curr->orderOffset;
 
-            // Remove node safely
-            if (prev == nullptr)
-                front = current->next;
-            else
-                prev->next = current->next;
+            if (!prev) front = curr->next;
+            else prev->next = curr->next;
 
-            if (current == rear)
-                rear = prev;
+            if (curr == rear) rear = prev;
 
-            delete current;
+            delete curr;
             size--;
-            return ord; // return pointer to order (caller can mark canceled)
+            return removedOffset;
         }
-        prev = current;
-        current = current->next;
+        prev = curr;
+        curr = curr->next;
     }
-
-    return nullptr; // not found
+    return 0;  // Not found
 }
 
-void OrderQueue::printDetailedQueue() {
+void OrderQueue::printQueue(OrderStorage& storage) const {
     OrderNode* current = front;
     while (current) {
-        std::cout << "OrderID: " << current->order->orderID
-                  << " , User: " << current->order->userID
-                  << " , Qty: " << current->order->remainingQty
-                  << " , Price: $" << current->order->price
-                  << " , Status: " << current->order->status << "\n";
+        Order o = storage.load(current->orderOffset);
+        cout << o.toString() << endl;
+        current = current->next;
+    }
+}
+
+void OrderQueue::printDetailedQueue(OrderStorage& storage) const {
+    OrderNode* current = front;
+    while (current) {
+        Order o = storage.load(current->orderOffset);
+        cout << "OrderID: " << o.getOrderID()
+             << " , User: " << o.userID
+             << " , Qty: " << o.getRemainingQuantity()
+             << " , Price: $" << o.getPrice()
+             << " , Status: " << o.status << "\n";
         current = current->next;
     }
 }
