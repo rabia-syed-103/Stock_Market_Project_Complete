@@ -12,6 +12,24 @@ struct StockHolding {
     string symbol;
     int quantity;
 };
+struct UserRecord {
+    char userID[64];
+    double cashBalance;
+    
+    // Holdings
+    int numHoldings;
+    struct {
+        char symbol[32];
+        int quantity;
+    } holdings[50];
+    
+    // Active orders
+    int numActiveOrders;
+    int activeOrderIDs[100];
+    
+    // Padding
+    char reserved[128];
+};
 
 class User {
 private:
@@ -52,6 +70,8 @@ public:
 
     User clone() const { return *this; }
 
+    static User fromRecord(const UserRecord& rec);
+    UserRecord toRecord() const;
 
 
     

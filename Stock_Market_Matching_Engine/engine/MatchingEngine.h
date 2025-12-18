@@ -14,6 +14,9 @@
 #include "../storage/OrderStorage.h"
 #include "../storage/StorageManager.h"
 #include "../storage/SymbolStorage.h"
+#include "../storage/UserStorage.h"
+#include "../storage/TradeStorage.h"
+#include "../storage/MetadataStorage.h"
 
 using namespace std;
 
@@ -25,12 +28,20 @@ private:
     
     vector<Trade> tradeHistory;
     SymbolStorage symbolStorage;
+
+    // ADD THESE THREE NEW STORAGE MANAGERS:
+    UserStorage userStorage;
+    TradeStorage tradeStorage;
+    MetadataStorage metadataStorage;
+
     mutex engineLock;
     mutex tradeLock;
     mutex userLock;
     
+
     int nextOrderID;
     int nextTradeID;
+
     OrderStorage orderStorage;
 
 public:
@@ -39,14 +50,27 @@ MatchingEngine() : nextOrderID(1), nextTradeID(1) {
     orderBooks = new MyHashMap<string, OrderBook*>(100);
     allOrders = new MyHashMap<int, Order*>(10000);
     users = new MyHashMap<string, User*>(1000);
+
+    Metadata meta = metadataStorage.loadMetadata();
+    nextOrderID = meta.nextOrderID;
+    nextTradeID = meta.nextTradeID;
+    
+    cout << "Restored IDs: nextOrderID=" << nextOrderID 
+         << ", nextTradeID=" << nextTradeID << "\n";
+    
     rebuildAllFromStorage();
-    //orderBooks->insert("AAPL", new OrderBook("AAPL"));
-    //orderBooks->insert("GOOGL", new OrderBook("GOOGL"));
-    //orderBooks->insert("TSLA", new OrderBook("TSLA"));
-    //orderBooks->insert("MSFT", new OrderBook("MSFT"));
+    
 }
 
 ~MatchingEngine() {
+    Metadata meta;
+    meta.nextOrderID = nextOrderID;
+    meta.nextTradeID = nextTradeID;
+    meta.totalUsers = users->getSize();
+    meta.totalOrders = allOrders->getSize();
+    meta.totalTrades = tradeHistory.size();
+    meta.lastSaveTime = time(nullptr);
+    metadataStorage.saveMetadata(meta);
     // Delete OrderBook*
     std::vector<std::string> symbols = orderBooks->getAllKeys();
     for (const std::string& sym : symbols) {
@@ -75,7 +99,6 @@ MatchingEngine() : nextOrderID(1), nextTradeID(1) {
 void createUser(string userID, double initialCash) {
     lock_guard<mutex> lock(userLock);
     
-    // Check if user exists
     if (users->contains(userID)) {
         cout << "User " << userID << " already exists\n";
         return;
@@ -83,6 +106,9 @@ void createUser(string userID, double initialCash) {
     
     User* user = new User(userID, initialCash);
     users->insert(userID, user);
+    
+    // PERSIST USER IMMEDIATELY
+    userStorage.persist(*user);
     
     cout << "Created user " << userID << " with $" << initialCash << "\n";
 }
@@ -137,10 +163,16 @@ Order* placeOrder(
             user->removeStock(symbol, quantity); // lock shares
         }
 
+        // PERSIST USER AFTER RESOURCE DEDUCTION
+        userStorage.updateUser(*user);
+
         int orderID = nextOrderID++;
         order = new Order(orderID, userID, symbol, side, price, quantity);
         allOrders->insert(orderID, order);
         user->addActiveOrder(orderID);
+        
+        // PERSIST USER AFTER ADDING ACTIVE ORDER
+        userStorage.updateUser(*user);
     }
 
     // Step 2: Get order book
@@ -185,6 +217,10 @@ Order* placeOrder(
             buyer->addStock(trade.symbol, trade.quantity);
             seller->addCash(trade.price * trade.quantity);
 
+            // PERSIST BOTH USERS AFTER TRADE EXECUTION
+            userStorage.updateUser(*buyer);
+            userStorage.updateUser(*seller);
+
             cout << "Trade executed: " << trade.toString() << "\n";
         }
 
@@ -202,8 +238,11 @@ Order* placeOrder(
 
                 if (diskBuy.isFilled()) {
                     lock_guard<mutex> ulock(userLock);
-                    if (users->contains(diskBuy.userID))
+                    if (users->contains(diskBuy.userID)) {
                         users->get(diskBuy.userID)->removeActiveOrder(buyID);
+                        // PERSIST USER AFTER REMOVING ACTIVE ORDER
+                        userStorage.updateUser(*users->get(diskBuy.userID));
+                    }
                 }
             }
 
@@ -215,8 +254,11 @@ Order* placeOrder(
 
                 if (diskSell.isFilled()) {
                     lock_guard<mutex> ulock(userLock);
-                    if (users->contains(diskSell.userID))
+                    if (users->contains(diskSell.userID)) {
                         users->get(diskSell.userID)->removeActiveOrder(sellID);
+                        // PERSIST USER AFTER REMOVING ACTIVE ORDER
+                        userStorage.updateUser(*users->get(diskSell.userID));
+                    }
                 }
             }
         }
@@ -224,6 +266,8 @@ Order* placeOrder(
         {
             lock_guard<mutex> lock(tradeLock);
             tradeHistory.push_back(trade);
+            // PERSIST TRADE IMMEDIATELY
+            tradeStorage.persist(trade);
         }
     }
 
@@ -232,7 +276,21 @@ Order* placeOrder(
         lock_guard<mutex> lock(userLock);
         if (users->contains(order->userID)) {
             users->get(order->userID)->removeActiveOrder(order->getOrderID());
+            // PERSIST USER AFTER REMOVING ACTIVE ORDER
+            userStorage.updateUser(*users->get(order->userID));
         }
+    }
+
+    // PERSIST METADATA PERIODICALLY (every 10 orders)
+    if (nextOrderID % 10 == 0) {
+        Metadata meta;
+        meta.nextOrderID = nextOrderID;
+        meta.nextTradeID = nextTradeID;
+        meta.totalUsers = users->getSize();
+        meta.totalOrders = allOrders->getSize();
+        meta.totalTrades = tradeHistory.size();
+        meta.lastSaveTime = time(nullptr);
+        metadataStorage.saveMetadata(meta);
     }
     
     cout << "Order Status: " << order->toString() << "\n";
@@ -294,6 +352,13 @@ void cancelOrder(int orderID, const string& userID) {
         user->removeActiveOrder(orderID);
     }
 
+    // After refunding user
+    {
+        lock_guard<mutex> lock(userLock);
+        if (users->contains(userID)) {
+            userStorage.updateUser(*users->get(userID));
+        }
+    }
     // Step 5: Mark order as cancelled
     order->status = "CANCELLED";
     std::cout << "Cancelled OrderID " << orderID 
@@ -483,18 +548,26 @@ void printPortfolio(const string& userID) {
 
 // ...existing code...
 void rebuildAllFromStorage() {
-    // 1️⃣ Rebuild all order books from symbol storage
+    // 1️⃣ Load all users FIRST (before orders)
+    vector<User> loadedUsers = userStorage.loadAllUsers();
+    for (const User& u : loadedUsers) {
+        User* userPtr = new User(u);
+        users->insert(userPtr->getUserID(), userPtr);
+    }
+    cout << "Loaded " << loadedUsers.size() << " users from storage.\n";
+    
+    // 2️⃣ Rebuild all order books from symbol storage
     vector<string> symbols = symbolStorage.loadAllSymbols();
     int restoredOrders = 0;
 
     for (const string& symbol : symbols) {
         if (!orderBooks->contains(symbol)) {
-            orderBooks->insert(symbol, new OrderBook(symbol,orderStorage));
+            orderBooks->insert(symbol, new OrderBook(symbol, orderStorage));
         }
 
         OrderBook* book = orderBooks->get(symbol);
 
-        // 2️⃣ Load orders for this symbol
+        // 3️⃣ Load orders for this symbol
         vector<Order> ordersForSymbol = orderStorage.loadAllOrdersForSymbol(symbol);
 
         for (const Order& order : ordersForSymbol) {
@@ -505,23 +578,25 @@ void rebuildAllFromStorage() {
             allOrders->insert(o->getOrderID(), o);
             restoredOrders++;
 
-            // Ensure a User exists for this order and add active order
-            if (!users->contains(order.userID)) {
-                User* newUser = new User(order.userID, 0.0); // default cash 0.0; persist users later if needed
-                users->insert(order.userID, newUser);
+            // User should already exist from step 1
+            if (users->contains(order.userID)) {
+                User* u = users->get(order.userID);
+                u->addActiveOrder(o->getOrderID());
             }
-            User* u = users->get(order.userID);
-            u->addActiveOrder(o->getOrderID());
         }
 
-        // 3️⃣ Rebuild order book tree from storage
+        // 4️⃣ Rebuild order book tree from storage
         book->rebuildFromStorage();
     }
+
+    // 5️⃣ Load all trades into tradeHistory
+    vector<Trade> loadedTrades = tradeStorage.loadAllTrades();
+    tradeHistory = loadedTrades;
+    cout << "Loaded " << tradeHistory.size() << " trades from storage.\n";
 
     cout << "Rebuilt " << symbols.size() << " order books from storage.\n";
     cout << "Restored " << restoredOrders << " active orders from storage.\n";
 }
-
 bool addStock(const std::string& symbol, const std::string& userID) {
     {
         std::scoped_lock lock(engineLock);

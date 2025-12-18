@@ -42,3 +42,39 @@ string Trade:: toString() const {
         << " , Timestamp: " << timestamp;
     return oss.str();
 }
+
+
+TradeRecord Trade::toRecord() const {
+    TradeRecord rec;
+    memset(&rec, 0, sizeof(TradeRecord));
+    
+    rec.tradeID = tradeID;
+    rec.buyOrderID = buyOrderID;
+    rec.sellOrderID = sellOrderID;
+    
+    strncpy(rec.buyUserID, buyUserID.c_str(), 63);
+    strncpy(rec.sellUserID, sellUserID.c_str(), 63);
+    strncpy(rec.symbol, symbol.c_str(), 31);
+    
+    rec.price = price;
+    rec.quantity = quantity;
+    rec.timestamp = timestamp;
+    
+    return rec;
+}
+
+Trade Trade::fromRecord(const TradeRecord& rec) {
+    Trade trade;
+    
+    trade.tradeID = rec.tradeID;
+    trade.buyOrderID = rec.buyOrderID;
+    trade.sellOrderID = rec.sellOrderID;
+    trade.buyUserID = string(rec.buyUserID);
+    trade.sellUserID = string(rec.sellUserID);
+    trade.symbol = string(rec.symbol);
+    trade.price = rec.price;
+    trade.quantity = rec.quantity;
+    trade.timestamp = rec.timestamp;
+    
+    return trade;
+}

@@ -7,7 +7,20 @@
 #include <iomanip>
 #include "Order.h"
 using namespace std;
-
+struct TradeRecord {
+    int tradeID;
+    int buyOrderID;
+    int sellOrderID;
+    char buyUserID[64];
+    char sellUserID[64];
+    char symbol[32];
+    double price;
+    int quantity;
+    time_t timestamp;
+    
+    // Padding
+    char reserved[64];
+};
 class Trade {
 public:
     int tradeID;            // Unique ID of trade
@@ -26,6 +39,9 @@ public:
 
     // Displayable format
     string toString() const;
+
+    static Trade fromRecord(const TradeRecord& rec);
+    TradeRecord toRecord() const;
 };
 
 #endif // TRADE_H

@@ -120,3 +120,39 @@ vector<StockHolding> User:: getAllHoldings() const {
     }
     return holdings;
 }
+
+
+UserRecord User::toRecord() const {
+    UserRecord rec;
+    memset(&rec, 0, sizeof(UserRecord));
+    
+    strncpy(rec.userID, userID.c_str(), 63);
+    rec.cashBalance = cashBalance;
+    
+    // Convert holdings
+    rec.numHoldings = min((int)symbols.size(), 50);
+    for (int i = 0; i < rec.numHoldings; i++) {
+        strncpy(rec.holdings[i].symbol, symbols[i].c_str(), 31);
+        rec.holdings[i].quantity = quantities[i];
+    }
+    
+    // Convert active orders
+    rec.numActiveOrders = min((int)activeOrders.size(), 100);
+    for (int i = 0; i < rec.numActiveOrders; i++) {
+        rec.activeOrderIDs[i] = activeOrders[i];
+    }
+    
+    return rec;
+}
+
+User User::fromRecord(const UserRecord& rec) {
+    User user(string(rec.userID), rec.cashBalance);
+    
+    // Restore holdings
+    for (int i = 0; i < rec.numHoldings; i++) {
+        user.symbols.push_back(string(rec.holdings[i].symbol));
+        user.quantities.push_back(rec.holdings[i].quantity);
+    }
+    
+    return user;
+}
