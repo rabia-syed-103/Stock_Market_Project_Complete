@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <string>
 #include <vector>
+#include <mutex>
 
 using namespace std;
 
@@ -14,10 +15,14 @@ class UserStorage {
 private:
     StorageManager storage;
     
-    // Maps to track offsets and IDs
-    unordered_map<string, DiskOffset> userIDToOffsetMap;  // username -> offset
-    unordered_map<DiskOffset, User> usersMap;             // offset -> User object
+    // CHANGED: Only keep index in memory, not full user objects
+    unordered_map<string, DiskOffset> userIDToOffsetMap;  // username -> offset (INDEX ONLY)
     
+    // REMOVED: usersMap - we don't keep full users in memory anymore
+    // Data lives on disk, we only cache via the MatchingEngine's LRU cache
+    
+    mutable mutex indexMutex;  // NEW: Thread safety for index
+
 public:
     UserStorage();
     UserStorage(const UserStorage&) = delete;
@@ -31,11 +36,23 @@ public:
     
     // Lookup operations
     DiskOffset getOffsetForUser(const string& userID);
-    User* getUserByID(const string& userID);
+    
+    // NEW: Direct load by userID (uses index)
+    User loadUser(const string& userID);
+    
+    // NEW: Check if user exists without loading
+    bool userExists(const string& userID);
+    
     vector<User> loadAllUsers();
     
     // Quick update operations
     void updateUser(const User& user);
+    
+private:
+    // NEW: Index management
+    void loadIndex();
+    void saveIndex();
+    void rebuildIndex();
 };
 
 #endif

@@ -15,6 +15,8 @@ OrderBook::OrderBook(std::string sym, OrderStorage& _order ): symbol(sym),orderS
     buyTree = new BTree(3);   // degree = 3
     sellTree = new BTree(3);
     pthread_mutex_init(&bookLock, NULL);
+
+    //rebuildFromStorage();
 }
 
 OrderBook::~OrderBook() {
@@ -39,38 +41,57 @@ vector<Trade> OrderBook::addOrder(Order* order) {
     // Persist new order first and get its offset
     DiskOffset orderOffset = orderStorage.persist(*order);
     std::cerr << "[DBG] addOrder: orderID=" << order->orderID
-            << " side=" << order->side << " price=" << order->price
-            << " qty=" << order->getRemainingQuantity()
-            << " offset=" << orderOffset << "\n";
-    if (orderOffset == 0) std::cerr << "[ERR] persist returned 0\n";
+              << " side=" << order->side << " price=" << order->price
+              << " qty=" << order->getRemainingQuantity()
+              << " offset=" << orderOffset << "\n";
+    
+    if (orderOffset == 0) {
+        std::cerr << "[ERR] persist returned 0\n";
+        pthread_mutex_unlock(&bookLock);
+        return trades;
+    }
 
     bool isBuy = order->getSide();
 
     if (isBuy) {
+        // BUY order - match against SELL tree
         DiskOffset bestSellOffset = sellTree->getBestSell();
+        std::cerr << "[DBG] addOrder: initial bestSellOffset=" << bestSellOffset << "\n";
+        
+        while (bestSellOffset != 0 && order->getRemainingQuantity() > 0) {
+            Order bestSell = orderStorage.load(bestSellOffset);
+            
+            std::cerr << "[DBG] compare: incoming(orderID=" << order->orderID 
+                      << ",price=" << order->price << ")"
+                      << " vs bestSell(offset=" << bestSellOffset 
+                      << ",orderID=" << bestSell.orderID
+                      << ",price=" << bestSell.price 
+                      << ",rem=" << bestSell.getRemainingQuantity() << ")\n";
 
-     std::cerr << "[DBG] addOrder: initial bestSellOffset=" << bestSellOffset << "\n";
-    while (bestSellOffset != 0 && order->getRemainingQuantity() > 0) {
-        Order bestSell = orderStorage.load(bestSellOffset);
-        std::cerr << "[DBG] compare: incoming(orderID="<<order->orderID<<",price="<<order->price<<")"
-                << " vs bestSell(offset="<<bestSellOffset<<",orderID="<<bestSell.orderID
-                <<",price="<<bestSell.price<<",rem="<<bestSell.getRemainingQuantity()<<")\n";
+            // Check if price matches
+            if (bestSell.price > order->price) {
+                std::cerr << "[DBG] Price mismatch, stopping match\n";
+                break;
+            }
 
-    
-            if (bestSell.price > order->price) break;
-
+            // Self-match prevention
             if (order->userID == bestSell.userID) {
+                std::cerr << "[DBG] Self-match detected, skipping\n";
                 double nextPrice = sellTree->nextKey(bestSell.price);
                 bestSellOffset = (nextPrice != -1) ? sellTree->search(nextPrice)->peek() : 0;
                 if (!bestSellOffset) break;
                 continue;
             }
 
-            int matchedQty = std::min(order->getRemainingQuantity(), bestSell.getRemainingQuantity());
-                    // after a match:
-            std::cerr << "[DBG] matched qty="<<matchedQty<<" updating disk offsets order="<<orderOffset<<" bestSell="<<bestSellOffset<<"\n";
-        // before dequeue:
-            // Use copies, never pointers
+            // Calculate matched quantity
+            int matchedQty = std::min(order->getRemainingQuantity(), 
+                                     bestSell.getRemainingQuantity());
+            
+            std::cerr << "[DBG] matched qty=" << matchedQty 
+                      << " updating disk offsets order=" << orderOffset 
+                      << " bestSell=" << bestSellOffset << "\n";
+
+            // Create trade (use copies to avoid pointer issues)
             Order incomingCopy = *order;
             Order counterCopy = bestSell;
 
@@ -89,37 +110,79 @@ vector<Trade> OrderBook::addOrder(Order* order) {
             order->status = (order->getRemainingQuantity() == 0) ? "FILLED" : "PARTIAL_FILL";
             bestSell.status = (bestSell.getRemainingQuantity() == 0) ? "FILLED" : "PARTIAL_FILL";
 
+            std::cerr << "[DBG] After match: order->rem=" << order->getRemainingQuantity()
+                      << " bestSell.rem=" << bestSell.getRemainingQuantity() << "\n";
+
             // Save updated orders to disk
             orderStorage.save(*order, orderOffset);
             orderStorage.save(bestSell, bestSellOffset);
-            std::cerr << "[DBG] about to dequeue price="<<bestSell.price<<"\n";
-            // Remove filled sell orders from tree
-            if (bestSell.getRemainingQuantity() == 0)
-                sellTree->search(bestSell.price)->dequeue();
 
+            // ✅ ALWAYS dequeue the matched order
+            OrderQueue* sellQueue = sellTree->search(bestSell.price);
+            if (sellQueue) {
+                sellQueue->dequeue();
+                std::cerr << "[DBG] Dequeued sell order, queue size now=" 
+                          << sellQueue->getSize() << "\n";
+            }
+
+            // ✅ If counter order still has quantity, re-insert it
+            if (bestSell.getRemainingQuantity() > 0) {
+                std::cerr << "[DBG] Counter order partial fill, re-inserting offset=" 
+                          << bestSellOffset << "\n";
+                sellTree->insert(bestSell.price, bestSellOffset);
+            }
+
+            // Get next best sell order
             bestSellOffset = sellTree->getBestSell();
+            std::cerr << "[DBG] Next bestSellOffset=" << bestSellOffset << "\n";
         }
 
-        if (order->getRemainingQuantity() > 0)
+        // If incoming order has remaining quantity, add to buy tree
+        if (order->getRemainingQuantity() > 0) {
+            std::cerr << "[DBG] Incoming order has remaining qty=" 
+                      << order->getRemainingQuantity() << ", adding to buy tree\n";
             buyTree->insert(order->price, orderOffset);
+        }
 
     } else {
+        // SELL order - match against BUY tree
         DiskOffset bestBuyOffset = buyTree->getBest();
+        std::cerr << "[DBG] addOrder: initial bestBuyOffset=" << bestBuyOffset << "\n";
 
         while (bestBuyOffset != 0 && order->getRemainingQuantity() > 0) {
             Order bestBuy = orderStorage.load(bestBuyOffset);
+            
+            std::cerr << "[DBG] compare: incoming(orderID=" << order->orderID 
+                      << ",price=" << order->price << ")"
+                      << " vs bestBuy(offset=" << bestBuyOffset 
+                      << ",orderID=" << bestBuy.orderID
+                      << ",price=" << bestBuy.price 
+                      << ",rem=" << bestBuy.getRemainingQuantity() << ")\n";
 
-            if (bestBuy.price < order->price) break;
+            // Check if price matches
+            if (bestBuy.price < order->price) {
+                std::cerr << "[DBG] Price mismatch, stopping match\n";
+                break;
+            }
 
+            // Self-match prevention
             if (order->userID == bestBuy.userID) {
+                std::cerr << "[DBG] Self-match detected, skipping\n";
                 double prevPrice = buyTree->prevKey(bestBuy.price);
                 bestBuyOffset = (prevPrice != -1) ? buyTree->search(prevPrice)->peek() : 0;
                 if (!bestBuyOffset) break;
                 continue;
             }
 
-            int matchedQty = std::min(order->getRemainingQuantity(), bestBuy.getRemainingQuantity());
+            // Calculate matched quantity
+            int matchedQty = std::min(order->getRemainingQuantity(), 
+                                     bestBuy.getRemainingQuantity());
+            
+            std::cerr << "[DBG] matched qty=" << matchedQty 
+                      << " updating disk offsets order=" << orderOffset 
+                      << " bestBuy=" << bestBuyOffset << "\n";
 
+            // Create trade (use copies)
             Order incomingCopy = *order;
             Order counterCopy = bestBuy;
 
@@ -131,30 +194,55 @@ vector<Trade> OrderBook::addOrder(Order* order) {
                 counterCopy.price
             );
 
+            // Update quantities and statuses
             order->reduceRemainingQty(matchedQty);
             bestBuy.reduceRemainingQty(matchedQty);
 
             order->status = (order->getRemainingQuantity() == 0) ? "FILLED" : "PARTIAL_FILL";
             bestBuy.status = (bestBuy.getRemainingQuantity() == 0) ? "FILLED" : "PARTIAL_FILL";
 
+            std::cerr << "[DBG] After match: order->rem=" << order->getRemainingQuantity()
+                      << " bestBuy.rem=" << bestBuy.getRemainingQuantity() << "\n";
+
+            // Save updated orders to disk
             orderStorage.save(*order, orderOffset);
             orderStorage.save(bestBuy, bestBuyOffset);
 
-            if (bestBuy.getRemainingQuantity() == 0)
-                buyTree->search(bestBuy.price)->dequeue();
+            // ✅ ALWAYS dequeue the matched order
+            OrderQueue* buyQueue = buyTree->search(bestBuy.price);
+            if (buyQueue) {
+                buyQueue->dequeue();
+                std::cerr << "[DBG] Dequeued buy order, queue size now=" 
+                          << buyQueue->getSize() << "\n";
+            }
 
+            // ✅ If counter order still has quantity, re-insert it
+            if (bestBuy.getRemainingQuantity() > 0) {
+                std::cerr << "[DBG] Counter order partial fill, re-inserting offset=" 
+                          << bestBuyOffset << "\n";
+                buyTree->insert(bestBuy.price, bestBuyOffset);
+            }
+
+            // Get next best buy order
             bestBuyOffset = buyTree->getBest();
+            std::cerr << "[DBG] Next bestBuyOffset=" << bestBuyOffset << "\n";
         }
 
-        if (order->getRemainingQuantity() > 0)
+        // If incoming order has remaining quantity, add to sell tree
+        if (order->getRemainingQuantity() > 0) {
+            std::cerr << "[DBG] Incoming order has remaining qty=" 
+                      << order->getRemainingQuantity() << ", adding to sell tree\n";
             sellTree->insert(order->price, orderOffset);
+        }
     }
-
+std::cerr << "[DBG] addOrder: about to unlock bookLock\n";
     pthread_mutex_unlock(&bookLock);
+    
+    std::cerr << "[DBG] addOrder: unlocked successfully\n";
+    std::cerr << "[DBG] addOrder complete: " << trades.size() << " trades executed\n";
     return trades;
+    cout << "Still here!";
 }
-
-
 
 // Cancel order fully persistent
 void OrderBook::cancelOrder(int orderID) {
@@ -270,28 +358,46 @@ string OrderBook::getSymbol() const {
 
 void OrderBook::rebuildFromStorage() {
     pthread_mutex_lock(&bookLock);
-
-    // Clear existing trees (if needed)
+    
+    vector<Order> allOrders = orderStorage.loadAllOrdersForSymbol(symbol);
+    
+    // ✅ ADD: Don't rebuild if no orders
+    if (allOrders.empty()) {
+        pthread_mutex_unlock(&bookLock);
+        return;  // Don't print anything, just skip
+    }
+    
     delete buyTree;
     delete sellTree;
     buyTree = new BTree(3);
     sellTree = new BTree(3);
 
-    // Load all orders from storage
-    std::vector<Order> allOrders = orderStorage.loadAllOrdersForSymbol(symbol);
-
-    for (auto& o : allOrders) {
-        if (o.status == "FILLED" || o.status == "CANCELLED") continue; // skip inactive
+    for (const Order& o : allOrders) {
+        if (o.status != "ACTIVE" && o.status != "PARTIAL_FILL") {
+            continue;
+        }
+        
+        if (o.getRemainingQuantity() <= 0) {
+            continue;
+        }
 
         DiskOffset offset = orderStorage.getOffsetForOrder(o.orderID);
+        if (offset == 0) continue;
 
-        if (o.getSide()) { // BUY
+        if (o.getSide()) {
             buyTree->insert(o.price, offset);
-        } else {           // SELL
+        } else {
             sellTree->insert(o.price, offset);
         }
     }
 
     pthread_mutex_unlock(&bookLock);
+    
+    cout << "Rebuilt order book for " << symbol << " with " 
+         << allOrders.size() << " orders from storage.\n";
+}
+
+Order OrderBook::loadOrderFromStorage(int orderID) {
+    return orderStorage.loadOrder(orderID);
 }
 

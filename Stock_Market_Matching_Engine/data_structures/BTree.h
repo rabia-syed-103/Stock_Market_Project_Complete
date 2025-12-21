@@ -30,6 +30,8 @@ public:
     double nextKey(double price);
     double prevKey(double price);
     //static void freeBTreeNode(BTreeNode* node);
+    
+    void removeOrder(double price, DiskOffset offset);
     ~BTree();
 };
 

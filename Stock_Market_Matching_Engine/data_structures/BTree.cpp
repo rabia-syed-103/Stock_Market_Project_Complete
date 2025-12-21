@@ -28,6 +28,8 @@ void BTree::print() {
 }
 
 BTreeNode* BTree::search(BTreeNode* node, double key) {
+    cout << "Here in Search Node\n";
+    if (!node) return nullptr;
     int i = 0;
     while (i < node->numKeys && key > node->keys[i]) i++;
 
@@ -39,10 +41,28 @@ BTreeNode* BTree::search(BTreeNode* node, double key) {
 }
 
 OrderQueue* BTree::search(double key) {
+    cout << "Here in Search (key=" << key << ")\n";
+    
     BTreeNode* node = search(root, key);
-    if (!node) return nullptr;
-    for (int i = 0; i < node->numKeys; i++)
-        if (node->keys[i] == key) return node->queues[i];
+    
+    if (!node) {
+        cout << "Node not found for key=" << key << "\n";
+        return nullptr;
+    }
+    
+    cout << "Back in search, node found, scanning keys\n";
+    
+    for (int i = 0; i < node->numKeys; i++) {
+        cout << "  checking node->keys[" << i << "]=" << node->keys[i] << "\n";
+        
+        if (node->keys[i] == key) {
+            cout << "  key match! queue=" << (void*)node->queues[i] 
+                 << " size=" << (node->queues[i] ? node->queues[i]->getSize() : -1) << "\n";
+            return node->queues[i];
+        }
+    }
+    
+    cout << "Key not found in node keys\n";
     return nullptr;
 }
 
@@ -60,6 +80,7 @@ void BTree::insert(double key, DiskOffset offset)
         insertNonFull(r, key, offset);
     }
 }
+
 
 void BTree::insertNonFull(BTreeNode* node, double key, DiskOffset offset) {
     int i = node->numKeys - 1;
@@ -92,7 +113,6 @@ void BTree::insertNonFull(BTreeNode* node, double key, DiskOffset offset) {
         insertNonFull(node->children[i], key, offset);
     }
 }
-
 
 void BTree::splitChild(BTreeNode* parent, int i, BTreeNode* y) {
     BTreeNode* z = new BTreeNode(y->isLeaf);
@@ -180,7 +200,6 @@ double BTree::getHighestKey() {
     return curr->keys[curr->numKeys - 1]; // largest key in rightmost leaf
 }
 
-
 double BTree::nextKey(double price) {
     if (!root || root->numKeys == 0) return -1;
 
@@ -204,24 +223,50 @@ double BTree::nextKey(double price) {
     return successor;
 }
 
-
 DiskOffset BTree::getBestSell() {
     if (!root || root->numKeys == 0) return 0;
 
     double price = getLowestKey();
     double highest = getHighestKey();
+    
+    std::cerr << "[DBG] getBestSell: starting with price=" << price 
+              << " highest=" << highest << "\n";
 
     while (price != -1 && price <= highest) {
+        std::cerr << "[DBG] getBestSell: checking price=" << price << "\n";
+        
         OrderQueue* q = search(price);
+        
+        std::cerr << "[DBG] getBestSell: queue=" << (void*)q 
+                  << " size=" << (q ? q->getSize() : -1) << "\n";
+        
         if (q && q->getSize() > 0) {
             while (q->getSize() > 0) {
                 DiskOffset off = q->peek();
-                if (off == 0) { q->dequeue(); continue; }
+                std::cerr << "[DBG] getBestSell: peek=" << off << "\n";
+                if (off == 0) { 
+                    std::cerr << "[DBG] getBestSell: offset 0, dequeueing\n";
+                    q->dequeue(); 
+                    continue; 
+                }
+                std::cerr << "[DBG] getBestSell: returning offset=" << off << "\n";
                 return off;
             }
         }
+        
+        double oldPrice = price;
         price = nextKey(price);
+        
+        std::cerr << "[DBG] getBestSell: nextKey(" << oldPrice << ") = " << price << "\n";
+        
+        // ✅ ADD: Prevent infinite loop
+        if (price == oldPrice) {
+            std::cerr << "[ERR] getBestSell: nextKey returned same price, breaking\n";
+            break;
+        }
     }
+    
+    std::cerr << "[DBG] getBestSell: no valid orders found, returning 0\n";
     return 0;
 }
 
@@ -279,6 +324,13 @@ BTree::~BTree() {
     if (root) {
         freeBTreeNode(root);
         root = nullptr;
+    }
+}
+
+void BTree::removeOrder(double price, DiskOffset offset) {
+    OrderQueue* queue = search(price);
+    if (queue) {
+        queue->remove(offset);
     }
 }
 

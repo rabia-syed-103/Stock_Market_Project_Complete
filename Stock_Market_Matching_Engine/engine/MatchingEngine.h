@@ -296,6 +296,7 @@ Order* placeOrder(
     cout << "Order Status: " << order->toString() << "\n";
     return order;
 }
+
 void cancelOrder(int orderID, const string& userID) {
     Order* order = nullptr;
     int remaining = 0;  // Save this early
@@ -370,7 +371,7 @@ vector<Trade> getAllTrades() {
         return tradeHistory;
     }
     
-    Order* getOrder(int orderID) {
+Order* getOrder(int orderID) {
         lock_guard<mutex> lock(engineLock);
         
         if (!allOrders->contains(orderID)) {
@@ -380,7 +381,7 @@ vector<Trade> getAllTrades() {
         return allOrders->get(orderID);
     }
     
-    OrderBook* getOrderBook(string symbol) {
+OrderBook* getOrderBook(string symbol) {
         lock_guard<mutex> lock(engineLock);
         
         if (!orderBooks->contains(symbol)) {
@@ -390,7 +391,7 @@ vector<Trade> getAllTrades() {
         return orderBooks->get(symbol);
     }
     
-    void printOrderBook(const string& symbol) {
+void printOrderBook(const string& symbol) {
         lock_guard<mutex> lock(engineLock);
         
         if (!orderBooks->contains(symbol)) {
@@ -402,76 +403,76 @@ vector<Trade> getAllTrades() {
         book->printOrderBook();
     }
 
-    string getPortfolio(string userID) {
-        lock_guard<mutex> lock(userLock);
-        
-        if (!users->contains(userID)) {
-            return "User not found";
-        }
-        
-        User* user = users->get(userID);
-        return user->toString();
+string getPortfolio(string userID) {
+    lock_guard<mutex> lock(userLock);
+    
+    if (!users->contains(userID)) {
+        return "User not found";
     }
     
-    double getCashBalance(string userID) {
-        lock_guard<mutex> lock(userLock);
-        
-        if (!users->contains(userID)) {
-            return -1;
-        }
-        
-        User* user = users->get(userID);
-        return user->getCashBalance();
+    User* user = users->get(userID);
+    return user->toString();
+}
+    
+double getCashBalance(string userID) {
+    lock_guard<mutex> lock(userLock);
+    
+    if (!users->contains(userID)) {
+        return -1;
     }
     
-    vector<StockHolding> getHoldings(string userID) {
-        lock_guard<mutex> lock(userLock);
-        
-        vector<StockHolding> holdings;
-        
-        if (!users->contains(userID)) {
-            return holdings;
-        }
-        
-        User* user = users->get(userID);
-
-        holdings = user->getAllHoldings();
-        
+    User* user = users->get(userID);
+    return user->getCashBalance();
+}
+    
+vector<StockHolding> getHoldings(string userID) {
+    lock_guard<mutex> lock(userLock);
+    
+    vector<StockHolding> holdings;
+    
+    if (!users->contains(userID)) {
         return holdings;
     }
     
-    vector<Order*> getActiveOrders(string userID) {
-        vector<Order*> orders;
+    User* user = users->get(userID);
 
-        // Acquire engineLock then userLock to follow the global order
-        std::scoped_lock lock(engineLock, userLock);
+    holdings = user->getAllHoldings();
+    
+    return holdings;
+}
+    
+vector<Order*> getActiveOrders(string userID) {
+    vector<Order*> orders;
 
-        if (!users->contains(userID)) return orders;
+    // Acquire engineLock then userLock to follow the global order
+    std::scoped_lock lock(engineLock, userLock);
 
-        User* user = users->get(userID);
-        vector<int> ids = user->getActiveOrderIDs();
-        for (int id : ids) {
-            if (allOrders->contains(id)) {
-                orders.push_back(allOrders->get(id));
-            }
+    if (!users->contains(userID)) return orders;
+
+    User* user = users->get(userID);
+    vector<int> ids = user->getActiveOrderIDs();
+    for (int id : ids) {
+        if (allOrders->contains(id)) {
+            orders.push_back(allOrders->get(id));
         }
-
-        return orders;
     }
 
-    vector<Trade> getUserTrades(string userID) {
-        lock_guard<mutex> lock(tradeLock);
-        
-        vector<Trade> userTrades;
-        
-        for (const Trade& trade : tradeHistory) {
-            if (trade.buyUserID == userID || trade.sellUserID == userID) {
-                userTrades.push_back(trade);
-            }
+    return orders;
+}
+
+vector<Trade> getUserTrades(string userID) {
+    lock_guard<mutex> lock(tradeLock);
+    
+    vector<Trade> userTrades;
+    
+    for (const Trade& trade : tradeHistory) {
+        if (trade.buyUserID == userID || trade.sellUserID == userID) {
+            userTrades.push_back(trade);
         }
-        
-        return userTrades;
     }
+    
+    return userTrades;
+}
    
 void printPortfolio(const string& userID) {
     // Local copies for printing
@@ -597,6 +598,7 @@ void rebuildAllFromStorage() {
     cout << "Rebuilt " << symbols.size() << " order books from storage.\n";
     cout << "Restored " << restoredOrders << " active orders from storage.\n";
 }
+
 bool addStock(const std::string& symbol, const std::string& userID) {
     {
         std::scoped_lock lock(engineLock);

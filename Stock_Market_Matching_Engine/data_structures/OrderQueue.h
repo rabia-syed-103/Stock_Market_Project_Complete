@@ -33,6 +33,8 @@ public:
     // Print the queue (loads orders from storage)
     void printQueue(OrderStorage& storage) const;
     void printDetailedQueue(OrderStorage& storage) const;
+
+    void remove(DiskOffset offset);
 };
 
 #endif

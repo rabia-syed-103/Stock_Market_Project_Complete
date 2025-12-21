@@ -27,6 +27,7 @@ void OrderQueue::enqueue(DiskOffset orderOffset) {
 }
 
 DiskOffset OrderQueue::dequeue() {
+    cout <<"Here in Dequeue\n";
     if (!front) return 0;  // Empty queue
 
     OrderNode* temp = front;
@@ -93,4 +94,40 @@ void OrderQueue::printDetailedQueue(OrderStorage& storage) const {
              << " , Status: " << o.status << "\n";
         current = current->next;
     }
+}
+
+
+void OrderQueue::remove(DiskOffset offset) {
+    if (!front) return;
+    
+    // Special case: removing head
+    if (front->orderOffset == offset) {
+        OrderNode* temp = front;
+        front = front->next;
+        if (front == nullptr) {
+            rear = nullptr;
+        }
+        delete temp;
+        size--;
+        std::cerr << "[DBG] OrderQueue::remove removed head offset=" << offset << "\n";
+        return;
+    }
+    
+    // General case: find and remove
+    OrderNode* curr = front;
+    while (curr->next != nullptr) {
+        if (curr->next->orderOffset == offset) {
+            OrderNode* temp = curr->next;
+            curr->next = temp->next;
+            if (temp == rear) {
+                rear = curr;
+            }
+            delete temp;
+            size--;
+            std::cerr << "[DBG] OrderQueue::remove removed offset=" << offset << "\n";
+            return;
+        }
+        curr = curr->next;
+    }
+    std::cerr << "[DBG] OrderQueue::remove offset not found=" << offset << "\n";
 }
