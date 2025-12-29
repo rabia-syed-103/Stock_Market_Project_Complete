@@ -1,12 +1,11 @@
+/*
 #include <iostream>
 #include <cassert>
 #include "engine/PersistentMatchingEngine.h"
 
 using namespace std;
 
-/* ================= PHASE 1 =================
-   Create data, execute trades, leave open orders
-   ========================================== */
+
 void phase1_create_and_persist() {
     cout << "\n===== PHASE 1: CREATE & PERSIST =====\n";
     PersistentMatchingEngine engine;
@@ -25,10 +24,10 @@ void phase1_create_and_persist() {
     engine.printPortfolio("bob");
     
     Order* s1 = engine.placeOrder("bob", "AAPL", "SELL", 150, 50);
-    assert(s1);
+    //assert(s1);
     
     Order* b1 = engine.placeOrder("alice", "AAPL", "BUY", 150, 30);
-    assert(b1);
+    //assert(b1);
     
     // ✅ FIX: Reload orders from disk to get updated state
     //Order* s1_updated = engine.(s1->orderID);
@@ -47,14 +46,11 @@ void phase1_create_and_persist() {
     engine.printOrderBook("AAPL");
     
     auto trades = engine.getUserTrades("alice");
-    assert(trades.size() == 1);
+    //assert(trades.size() == 1);
     
     cout << "\nPHASE 1 COMPLETE — EXIT PROGRAM\n";
 }
 
-/* ================= PHASE 2 =================
-   Reload system, verify disk reconstruction
-   ========================================== */
 void phase2_recover_and_verify() {
     cout << "\n===== PHASE 2: RECOVER & VERIFY =====\n";
 
@@ -64,8 +60,8 @@ void phase2_recover_and_verify() {
     User* alice = engine.getUser("alice");
     User* bob   = engine.getUser("bob");
 
-    assert(alice);
-    assert(bob);
+    //assert(alice);
+    //assert(bob);
 
     // --- Portfolio correctness ---
     cout << "\nRecovered portfolios:\n";
@@ -73,12 +69,12 @@ void phase2_recover_and_verify() {
     engine.printPortfolio("bob");
 
     // Alice bought 30 @150 = 4500
-    assert(alice->getStockQuantity("AAPL") == 30);
-    assert(alice->getCashBalance() == 5500);
+    //assert(alice->getStockQuantity("AAPL") == 30);
+    //assert(alice->getCashBalance() == 5500);
 
     // Bob sold 30 shares, remaining cancelled refunded
-    assert(bob->getStockQuantity("AAPL") == 70);
-    assert(bob->getCashBalance() == 14500);
+    //assert(bob->getStockQuantity("AAPL") == 70);
+    //assert(bob->getCashBalance() == 14500);
 
     // --- OrderBook rebuilt ---
     cout << "\nRecovered order book:\n";
@@ -86,7 +82,7 @@ void phase2_recover_and_verify() {
 
     // --- Trades recovered ---
     auto trades = engine.getUserTrades("alice");
-    assert(trades.size() == 1);
+    //assert(trades.size() == 1);
     cout << "\nRecovered trade:\n";
     cout << trades[0].toString() << "\n";
 
@@ -120,8 +116,63 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
-
+*/
 //g++ -std=c++17 -pthread \
     Stock_Market_Matching_Engine/main.cpp \
     Stock_Market_Matching_Engine/**/*.cpp \
     -o main
+
+#include <iostream>
+
+#include "server/WebSocketServer.h"
+#include "server/RequestHandler.h"
+#include "engine/PersistentMatchingEngine.h"
+
+
+#include <signal.h>
+
+
+
+int main() {
+    // ✅ Ignore SIGPIPE (safe even if not strictly needed now)
+    signal(SIGPIPE, SIG_IGN);
+
+    PersistentMatchingEngine engine;
+    RequestHandler handler(engine);
+
+    // 🔥 WebSocket server (NO worker count now)
+    WebSocketServer server(8080);
+
+    server.setHandler(
+        [&handler](int clientId, const nlohmann::json& req) {
+            return handler.handleRequest(clientId, req);
+        }
+    );
+
+    server.run();
+    return 0;
+}
+
+
+//g++ -std=c++17 -I./Stock_Market_Matching_Engine/libs/websocketpp-master \
+    -I./Stock_Market_Matching_Engine/libs/asio/include \
+    -I./Stock_Market_Matching_Engine/libs/nlohmann \
+    -I./Stock_Market_Matching_Engine/core \
+    -I./Stock_Market_Matching_Engine/engine \
+    -I./Stock_Market_Matching_Engine/server \
+    -I./Stock_Market_Matching_Engine/data_structures \
+    -I./Stock_Market_Matching_Engine/storage \
+    Stock_Market_Matching_Engine/main.cpp \
+    Stock_Market_Matching_Engine/server/WebSocketServer.cpp \
+    Stock_Market_Matching_Engine/core/Order.cpp \
+    Stock_Market_Matching_Engine/core/Trade.cpp \
+    Stock_Market_Matching_Engine/core/User.cpp \
+    Stock_Market_Matching_Engine/engine/OrderBook.cpp \
+    Stock_Market_Matching_Engine/data_structures/BTree.cpp \
+    Stock_Market_Matching_Engine/data_structures/OrderQueue.cpp \
+    Stock_Market_Matching_Engine/storage/StorageManager.cpp \
+    Stock_Market_Matching_Engine/storage/OrderStorage.cpp \
+    Stock_Market_Matching_Engine/storage/UserStorage.cpp \
+    Stock_Market_Matching_Engine/storage/TradeStorage.cpp \
+    Stock_Market_Matching_Engine/storage/MetadataStorage.cpp \
+    -pthread -o main

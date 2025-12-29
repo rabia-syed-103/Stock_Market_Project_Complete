@@ -16,7 +16,8 @@
 #include "../storage/MetadataStorage.h"
 #include "../storage/SymbolStorage.h"
 #include "OrderBook.h"
-
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
 using namespace std;
 
 class PersistentMatchingEngine {
@@ -144,7 +145,6 @@ public:
                     std::cout << "Error: Insufficient shares\n";
                     return nullptr;
                 }
-                user->removeStock(symbol, quantity);
             }
             
             // Write updated user to disk immediately
@@ -166,12 +166,11 @@ public:
             orderCache.put(orderID, std::make_shared<Order>(*order));
             
             // Update metadata periodically
-            if (nextOrderID % 10 == 0) {
-                Metadata meta;
-                meta.nextOrderID = nextOrderID;
-                meta.nextTradeID = nextTradeID;
-                metadataStorage.saveMetadata(meta);
-            }
+            Metadata meta;
+            meta.nextOrderID = nextOrderID;
+            meta.nextTradeID = nextTradeID;
+            metadataStorage.saveMetadata(meta);
+
         }
 
         
@@ -196,7 +195,7 @@ public:
         return order;
     }
 
-void cancelOrder(int orderID, const std::string& userID) {
+bool cancelOrder(int orderID, const std::string& userID) {
     std::lock_guard<std::mutex> lock(orderLock);
 
     DiskOffset off = orderStorage.getOffsetForOrder(orderID);
@@ -204,12 +203,12 @@ void cancelOrder(int orderID, const std::string& userID) {
 
     if (order.getOrderID() == 0) {
         cout << "Error: Order not found\n";
-        return;
+        return 0;
     }
 
     if (order.userID != userID) {
         cout << "Error: Order does not belong to user\n";
-        return;
+        return 0;
     }
 
     // ✅ CAPTURE remaining BEFORE cancel
@@ -240,27 +239,56 @@ void cancelOrder(int orderID, const std::string& userID) {
     cout << "Order " << orderID
          << " cancelled, refunded "
          << remaining << " units\n";
+    return true;
 }
 
 
-    bool addStock(const std::string& symbol, const std::string& userID) {
+    bool addStock(const std::string& symbol,
+              const std::string& userID,
+              int initialQuantity) {
 
+        // 🔒 Admin-only
         if (userID != "admin123") {
-            std::cout << "Unauthorized\n";
+            std::cout << "Unauthorized: only admin can add stocks\n";
             return false;
         }
-        
+
+        if (symbol.empty() || initialQuantity <= 0) {
+            std::cout << "Invalid stock symbol or quantity\n";
+            return false;
+        }
+
+        // Prevent duplicates
         if (symbolExists(symbol)) {
-            std::cout << "Stock already exists\n";
+            std::cout << "Stock already exists: " << symbol << "\n";
             return false;
         }
-        
-        // Persist symbol to disk
+
+        // 1️⃣ Persist symbol (disk = source of truth)
         symbolStorage.addSymbol(symbol);
-        
-        std::cout << "Stock " << symbol << " added\n";
+
+        // 2️⃣ Load admin user
+        User* admin = getUser(userID);
+        if (!admin) {
+            std::cout << "Admin user not found\n";
+            return false;
+        }
+
+        // 3️⃣ Credit initial shares to admin
+        {
+            std::lock_guard<std::mutex> lock(userLock);
+            admin->addStock(symbol, initialQuantity);
+            userStorage.updateUser(*admin);
+        }
+
+        std::cout << "Stock " << symbol
+                << " added with "
+                << initialQuantity
+                << " shares issued to admin\n";
+
         return true;
     }
+
 
     bool symbolExists(const std::string& symbol) {
         std::vector<std::string> symbols = symbolStorage.loadAllSymbols();
@@ -319,10 +347,54 @@ void cancelOrder(int orderID, const std::string& userID) {
         OrderBook* book = getOrCreateOrderBook(symbol);
         book->printOrderBook();
     }
+
+    json getOrderBook(const std::string& symbol) {
+        OrderBook* book = getOrCreateOrderBook(symbol);
+        if (!book) {
+            return { {"error", "OrderBook not found"} };
+        }
+        return book->getOrderBook();
+    }
+
+
+    json getPortfolio(const std::string& userID) {
+        json result;
+
+        User* user = getUser(userID);
+        if (!user) {
+            result["error"] = "User not found";
+            return result;
+        }
+
+        // Basic info
+        result["userID"] = userID;
+
+        double reservedCash = 0;
+
+        // Cash section
+        result["cash"] = {
+            {"available", user->getCashBalance()},
+
+        };
+
+        // Holdings section
+        json holdingsJson = json::object();
+
+        for (const auto& h : user->getAllHoldings()) {
+            holdingsJson[h.symbol] = {
+                {"total",     h.quantity},
+            };
+        }
+
+        result["holdings"] = holdingsJson;
+
+        return result;
+    }
+
 private:
  
     
-OrderBook* getOrCreateOrderBook(const std::string& symbol) {
+    OrderBook* getOrCreateOrderBook(const std::string& symbol) {
     std::lock_guard<std::mutex> lock(bookLock);
     
     auto cached = bookCache.get(symbol);
@@ -384,7 +456,7 @@ OrderBook* getOrCreateOrderBook(const std::string& symbol) {
         }
     }
 
-void updateUsersForTrade(const Trade& trade) {
+    void updateUsersForTrade(const Trade& trade) {
     // NO LOCK HERE - getUser() will lock internally
     
     User* buyer = getUser(trade.buyUserID);
@@ -396,6 +468,7 @@ void updateUsersForTrade(const Trade& trade) {
     {
         std::lock_guard<std::mutex> lock(userLock);
         buyer->addStock(trade.symbol, trade.quantity);
+        seller->removeStock(trade.symbol, trade.quantity);
         seller->addCash(trade.price * trade.quantity);
         
         userStorage.updateUser(*buyer);
@@ -432,6 +505,9 @@ void updateUsersForTrade(const Trade& trade) {
     
     cout << "Rebuilt " << symbols.size() << " order books from storage.\n";
     }
+
+    
+
 };
 
 #endif // PERSISTENT_MATCHING_ENGINE_H

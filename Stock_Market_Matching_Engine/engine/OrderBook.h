@@ -8,6 +8,8 @@
 #include "../core/Order.h"
 #include "../core/Trade.h"
 #include <algorithm>  
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
 
 using namespace std;
 
@@ -34,6 +36,8 @@ public:
     string getOrderBookJSON();
     string getSymbol() const; 
     
+    json getOrderBook();
+
     // NEW: Rebuild from disk on startup
     void rebuildFromStorage();
     

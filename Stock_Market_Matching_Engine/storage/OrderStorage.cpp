@@ -135,84 +135,50 @@ vector<Order> OrderStorage::loadAllOrders() {
 
 void OrderStorage::loadIndex() {
     ifstream indexFile("data/orders.idx", ios::binary);
-    
+
     if (!indexFile) {
-        cout << "Order index not found, rebuilding...\n";
+        cout << "Order index not found, rebuilding from orders.dat...\n";
         rebuildIndex();
         return;
     }
-    
-    // ✅ ADD: Check file size first
-    indexFile.seekg(0, ios::end);
-    size_t fileSize = indexFile.tellg();
-    indexFile.seekg(0, ios::beg);
-    
-    if (fileSize < sizeof(size_t)) {
-        cout << "Order index corrupted, rebuilding...\n";
-        indexFile.close();
-        rebuildIndex();
-        return;
-    }
-    
-    // Load primary index (orderID -> offset)
-    size_t count;
+
+    size_t count = 0;
     indexFile.read(reinterpret_cast<char*>(&count), sizeof(count));
-    
-    // ✅ ADD: Sanity check on count
-    if (count > 1000000) {  // More than 1 million orders is suspicious
-        cout << "Order index has invalid count: " << count << ", rebuilding...\n";
+
+    if (!indexFile || count == 0 || count > 1000000) {
+        cout << "Order index invalid or empty, rebuilding from orders.dat...\n";
         indexFile.close();
         rebuildIndex();
         return;
     }
-    
-    for (size_t i = 0; i < count; i++) {
+
+    for (size_t i = 0; i < count; ++i) {
         int orderID;
         indexFile.read(reinterpret_cast<char*>(&orderID), sizeof(orderID));
-        
+
         DiskOffset offset;
         indexFile.read(reinterpret_cast<char*>(&offset), sizeof(offset));
-        
-        // Read symbol
+
         size_t symLen;
         indexFile.read(reinterpret_cast<char*>(&symLen), sizeof(symLen));
-        
-        // ✅ ADD: Validate symbol length
-        if (symLen > 100) {  // Symbol longer than 100 chars is invalid
-            cout << "Invalid symbol length: " << symLen << ", stopping index load\n";
-            indexFile.close();
-            rebuildIndex();
-            return;
-        }
-        
+        if (!indexFile || symLen == 0 || symLen > 100) { indexFile.close(); rebuildIndex(); return; }
         string symbol(symLen, '\0');
         indexFile.read(&symbol[0], symLen);
-        
-        // Read userID
+
         size_t userLen;
         indexFile.read(reinterpret_cast<char*>(&userLen), sizeof(userLen));
-        
-        // ✅ ADD: Validate userID length
-        if (userLen > 100) {
-            cout << "Invalid userID length: " << userLen << ", stopping index load\n";
-            indexFile.close();
-            rebuildIndex();
-            return;
-        }
-        
+        if (!indexFile || userLen == 0 || userLen > 100) { indexFile.close(); rebuildIndex(); return; }
         string userID(userLen, '\0');
         indexFile.read(&userID[0], userLen);
-        
-        // Build secondary indexes
+
         orderIDToOffsetMap[orderID] = offset;
         symbolToOrdersMap[symbol].push_back(orderID);
         userToOrdersMap[userID].push_back(orderID);
     }
-    
+
     indexFile.close();
     cout << "Loaded order index: " << orderIDToOffsetMap.size() << " orders.\n";
 }
-
 
 void OrderStorage::saveIndex() {
     ofstream indexFile("data/orders.idx", ios::binary);
@@ -247,47 +213,42 @@ void OrderStorage::saveIndex() {
     indexFile.close();
 }
 
-
 void OrderStorage::rebuildIndex() {
     orderIDToOffsetMap.clear();
     symbolToOrdersMap.clear();
     userToOrdersMap.clear();
-    
+
     const size_t recSize = sizeof(OrderRecord);
+
     ifstream f("data/orders.dat", ios::binary | ios::ate);
-    
     if (!f) {
-        cout << "orders.dat not found, starting fresh\n";
-        return; // ✅ Exit early if file doesn't exist
-    }
-    
-    size_t fileSize = (size_t)f.tellg();
-    f.close();
-    
-    // ✅ ADD: Exit if file is empty
-    if (fileSize == 0) {
-        cout << "orders.dat is empty, starting fresh\n";
+        cout << "orders.dat not found, nothing to rebuild\n";
+        saveIndex();
         return;
     }
-    
+
+    size_t fileSize = static_cast<size_t>(f.tellg());
+    f.close();
+
+    if (fileSize < recSize) {
+        cout << "No orders found in orders.dat\n";
+        saveIndex();
+        return;
+    }
+
     for (size_t rawOff = 0; rawOff + recSize <= fileSize; rawOff += recSize) {
         OrderRecord rec;
         storage.read(rawOff, &rec, recSize);
-        
         Order o = Order::fromRecord(rec);
-        
-        // ✅ ADD: Validate order
-        if (o.getOrderID() == 0 || o.symbol[0] == '\0') {
-            continue; // Skip invalid orders
-        }
-        
+
+        if (o.getOrderID() == 0 || o.symbol.empty() || o.userID.empty()) continue;
+
         DiskOffset storedOff = static_cast<DiskOffset>(rawOff) + 1;
-        
         orderIDToOffsetMap[o.orderID] = storedOff;
         symbolToOrdersMap[o.symbol].push_back(o.orderID);
         userToOrdersMap[o.userID].push_back(o.orderID);
     }
-    
+
     cout << "Rebuilt order index: " << orderIDToOffsetMap.size() << " orders.\n";
     saveIndex();
 }

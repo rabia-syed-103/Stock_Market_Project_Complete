@@ -297,7 +297,7 @@ Order* placeOrder(
     return order;
 }
 
-void cancelOrder(int orderID, const string& userID) {
+bool cancelOrder(int orderID, const string& userID) {
     Order* order = nullptr;
     int remaining = 0;  // Save this early
     string side;
@@ -310,14 +310,14 @@ void cancelOrder(int orderID, const string& userID) {
 
         if (!allOrders->contains(orderID)) {
             std::cout << "Error: Order " << orderID << " not found\n";
-            return;
+            return 0;
         }
 
         order = allOrders->get(orderID);
 
         if (order->userID != userID) {
             std::cout << "Error: Order " << orderID << " does not belong to " << userID << "\n";
-            return;
+            return 0;
         }
         
         // IMPORTANT: Save values BEFORE cancelling from order book
@@ -337,7 +337,7 @@ void cancelOrder(int orderID, const string& userID) {
     {
         std::scoped_lock lock(userLock);
 
-        if (!users->contains(userID)) return;
+        if (!users->contains(userID)) return 0;
 
         User* user = users->get(userID);
         
@@ -364,6 +364,7 @@ void cancelOrder(int orderID, const string& userID) {
     order->status = "CANCELLED";
     std::cout << "Cancelled OrderID " << orderID 
               << " from " << side << " side, Refund processed.\n";
+    return true;
 }
 
 vector<Trade> getAllTrades() {

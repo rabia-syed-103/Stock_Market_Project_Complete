@@ -104,58 +104,91 @@ void UserStorage::loadIndex() {
     ifstream indexFile("data/users.idx", ios::binary);
     
     if (!indexFile) {
-        cout << "User index not found, rebuilding...\n";
+        cout << "User index not found, rebuilding from users.dat...\n";
         rebuildIndex();
         return;
     }
-    
-    // ✅ ADD: Check file size
-    indexFile.seekg(0, ios::end);
-    size_t fileSize = indexFile.tellg();
-    indexFile.seekg(0, ios::beg);
-    
-    if (fileSize < sizeof(size_t)) {
-        cout << "User index corrupted, rebuilding...\n";
-        indexFile.close();
-        rebuildIndex();
-        return;
-    }
-    
-    size_t count;
+
+    // Read user count
+    size_t count = 0;
     indexFile.read(reinterpret_cast<char*>(&count), sizeof(count));
     
-    // ✅ ADD: Sanity check
-    if (count > 1000000) {
-        cout << "User index has invalid count, rebuilding...\n";
+    if (!indexFile || count == 0 || count > 1000000) {
+        cout << "User index invalid or empty, rebuilding from users.dat...\n";
         indexFile.close();
         rebuildIndex();
         return;
     }
-    
-    for (size_t i = 0; i < count; i++) {
+
+    // Read userID -> offset pairs
+    for (size_t i = 0; i < count; ++i) {
         size_t idLen;
         indexFile.read(reinterpret_cast<char*>(&idLen), sizeof(idLen));
-        
-        // ✅ ADD: Validate length
-        if (idLen > 100) {
-            cout << "Invalid userID length, rebuilding...\n";
+
+        if (!indexFile || idLen == 0 || idLen > 100) {
+            cout << "Invalid userID length in index, rebuilding...\n";
             indexFile.close();
             rebuildIndex();
             return;
         }
-        
+
         string userID(idLen, '\0');
         indexFile.read(&userID[0], idLen);
-        
+
         DiskOffset offset;
         indexFile.read(reinterpret_cast<char*>(&offset), sizeof(offset));
-        
+
+        if (!indexFile) {
+            cout << "Corrupted index entry, rebuilding...\n";
+            indexFile.close();
+            rebuildIndex();
+            return;
+        }
+
         userIDToOffsetMap[userID] = offset;
     }
-    
+
     indexFile.close();
     cout << "Loaded user index: " << userIDToOffsetMap.size() << " users.\n";
 }
+
+void UserStorage::rebuildIndex() {
+    userIDToOffsetMap.clear();
+    
+    const size_t recSize = sizeof(UserRecord);
+
+    // Use ifstream to get file size
+    ifstream f("data/users.dat", ios::binary | ios::ate);
+    if (!f) {
+        cout << "users.dat not found, nothing to rebuild\n";
+        saveIndex();
+        return;
+    }
+
+    size_t fileSize = static_cast<size_t>(f.tellg());
+    f.close();
+
+    if (fileSize < recSize) {
+        cout << "No users found in users.dat\n";
+        saveIndex();
+        return;
+    }
+
+    // Scan the file using your Storage wrapper
+    for (size_t rawOff = 0; rawOff + recSize <= fileSize; rawOff += recSize) {
+        UserRecord rec;
+        storage.read(rawOff, &rec, recSize);  // use your StorageManager read
+        User u = User::fromRecord(rec);
+        DiskOffset storedOff = static_cast<DiskOffset>(rawOff) + 1;
+        userIDToOffsetMap[u.getUserID()] = storedOff;
+    }
+
+    cout << "Rebuilt user index: " << userIDToOffsetMap.size() << " users.\n";
+
+    // Save rebuilt index
+    saveIndex();
+}
+
 
 // NEW: Save index to file
 void UserStorage::saveIndex() {
@@ -185,30 +218,3 @@ void UserStorage::saveIndex() {
     indexFile.close();
 }
 
-// NEW: Rebuild index from data file
-void UserStorage::rebuildIndex() {
-    userIDToOffsetMap.clear();
-    
-    const size_t recSize = sizeof(UserRecord);
-    ifstream f("data/users.dat", ios::binary | ios::ate);
-    if (!f) return;
-    
-    size_t fileSize = (size_t)f.tellg();
-    f.close();
-    
-    // Scan through file and build index
-    for (size_t rawOff = 0; rawOff + recSize <= fileSize; rawOff += recSize) {
-        UserRecord rec;
-        storage.read(rawOff, &rec, recSize);
-        
-        User u = User::fromRecord(rec);
-        DiskOffset storedOff = static_cast<DiskOffset>(rawOff) + 1;
-        
-        userIDToOffsetMap[u.getUserID()] = storedOff;
-    }
-    
-    cout << "Rebuilt user index: " << userIDToOffsetMap.size() << " users.\n";
-    
-    // Save the rebuilt index
-    saveIndex();
-}

@@ -6,6 +6,8 @@
 #include <sstream>
 #include <iomanip>
 #include "Order.h"
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
 using namespace std;
 struct TradeRecord {
     int tradeID;
@@ -42,6 +44,7 @@ public:
 
     static Trade fromRecord(const TradeRecord& rec);
     TradeRecord toRecord() const;
+    json toJSON() const;
 };
 
 #endif // TRADE_H

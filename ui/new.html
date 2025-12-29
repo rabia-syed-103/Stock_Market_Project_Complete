@@ -1,0 +1,1486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Trading Platform</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #1a1f2e;
+            color: #e1e8ed;
+        }
+
+        /* Auth Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal-overlay.hidden {
+            display: none;
+        }
+
+        .auth-modal {
+            background: #232c3d;
+            border-radius: 12px;
+            padding: 40px;
+            width: 420px;
+            border: 1px solid #2d3748;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .auth-modal h2 {
+            margin-bottom: 24px;
+            text-align: center;
+            color: #fff;
+            font-size: 24px;
+        }
+
+        .auth-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+
+        .auth-tab {
+            flex: 1;
+            padding: 12px;
+            background: #1a1f2e;
+            border: 1px solid #2d3748;
+            border-radius: 6px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .auth-tab.active {
+            background: #3b82f6;
+            border-color: #3b82f6;
+            color: #fff;
+        }
+
+        .auth-form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-group label {
+            font-size: 14px;
+            color: #9ca3af;
+            font-weight: 500;
+        }
+
+        .form-group input {
+            padding: 12px 16px;
+            background: #1a1f2e;
+            border: 1px solid #374151;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 15px;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .btn-primary {
+            padding: 14px;
+            background: #10b981;
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.2s;
+            margin-top: 8px;
+        }
+
+        .btn-primary:hover {
+            background: #059669;
+        }
+
+        .error-message {
+            color: #ef4444;
+            font-size: 13px;
+            text-align: center;
+            display: none;
+            padding: 8px;
+            background: rgba(239, 68, 68, 0.1);
+            border-radius: 6px;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        /* Header */
+        .header {
+            background: #232c3d;
+            padding: 16px 24px;
+            border-bottom: 1px solid #374151;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left h1 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .header-right {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .nav-item {
+            cursor: pointer;
+            padding: 8px 20px;
+            border-radius: 6px;
+            transition: background 0.2s;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .nav-item:hover {
+            background: #374151;
+        }
+
+        .nav-item.active {
+            background: #3b82f6;
+        }
+
+        .alerts-badge {
+            position: relative;
+        }
+
+        .badge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            background: #ef4444;
+            color: #fff;
+            font-size: 10px;
+            padding: 2px 5px;
+            border-radius: 10px;
+            font-weight: 700;
+        }
+
+        /* Stock Header */
+        .stock-header {
+            background: #232c3d;
+            padding: 24px;
+            margin: 16px 16px 0 16px;
+            border-radius: 8px;
+        }
+
+        .stock-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stock-title {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .stock-title h2 {
+            font-size: 32px;
+            font-weight: 600;
+        }
+
+        .stock-subtitle {
+            color: #9ca3af;
+            font-size: 13px;
+        }
+
+        .stock-price-info {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        .stock-price {
+            font-size: 32px;
+            color: #10b981;
+            font-weight: 600;
+        }
+
+        .stock-change {
+            color: #10b981;
+            font-size: 16px;
+        }
+
+        .stock-change.negative {
+            color: #ef4444;
+        }
+
+        .last-updated {
+            color: #6b7280;
+            font-size: 13px;
+        }
+
+        /* Main Content */
+        .main-content {
+            display: grid;
+            grid-template-columns: 240px 1fr 340px;
+            gap: 16px;
+            padding: 16px;
+            height: calc(100vh - 200px);
+        }
+
+        .panel {
+            background: #232c3d;
+            border-radius: 8px;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .panel-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .settings-icon {
+            cursor: pointer;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+            font-size: 18px;
+        }
+
+        .settings-icon:hover {
+            opacity: 1;
+        }
+
+        /* Order Book */
+        .orderbook-section {
+            margin-bottom: 24px;
+        }
+
+        .orderbook-section h4 {
+            color: #9ca3af;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .orderbook-header {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #374151;
+            color: #6b7280;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .orderbook-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            font-size: 13px;
+        }
+
+        .price-buy {
+            color: #10b981;
+        }
+
+        .price-sell {
+            color: #ef4444;
+        }
+
+        /* Chart */
+        .chart-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .chart-container {
+            background: #232c3d;
+            border-radius: 8px;
+            padding: 20px;
+            height: 450px;
+        }
+
+        .chart-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .chart-tab {
+            padding: 6px 16px;
+            background: #1a1f2e;
+            border: 1px solid #374151;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .chart-tab.active {
+            background: #3b82f6;
+            border-color: #3b82f6;
+            color: #fff;
+        }
+
+        #priceChart {
+            width: 100%;
+            height: 380px;
+        }
+
+        /* Place Order Form */
+        .order-panel {
+            background: #232c3d;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .order-actions {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            font-size: 14px;
+        }
+
+        .action-btn.buy {
+            background: #374151;
+            color: #9ca3af;
+        }
+
+        .action-btn.buy.active {
+            background: #3b82f6;
+            color: #fff;
+        }
+
+        .action-btn.sell {
+            background: #374151;
+            color: #9ca3af;
+        }
+
+        .action-btn.sell.active {
+            background: #ef4444;
+            color: #fff;
+        }
+
+        .order-form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .order-form select,
+        .order-form input {
+            padding: 12px 16px;
+            background: #1a1f2e;
+            border: 1px solid #374151;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 14px;
+        }
+
+        .order-form select:focus,
+        .order-form input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .place-order-btn {
+            padding: 14px;
+            background: #10b981;
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        .place-order-btn:hover {
+            background: #059669;
+        }
+
+        /* Portfolio */
+        .portfolio-user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #374151;
+        }
+
+        .user-avatar {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 20px;
+        }
+
+        .portfolio-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+        }
+
+        .stat-label {
+            color: #9ca3af;
+        }
+
+        .stat-value {
+            font-weight: 600;
+        }
+
+        /* Recent Trades */
+        .trade-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-bottom: 1px solid #374151;
+            transition: background 0.2s;
+        }
+
+        .trade-item:hover {
+            background: #1a1f2e;
+        }
+
+        .trade-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .trade-icon.buy {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        .trade-icon.sell {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .trade-details {
+            flex: 1;
+        }
+
+        .trade-action {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        /* Trade History */
+        .history-table {
+            width: 100%;
+            font-size: 13px;
+        }
+
+        .history-table th {
+            text-align: left;
+            color: #6b7280;
+            font-weight: 600;
+            padding: 8px 4px;
+            border-bottom: 1px solid #374151;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .history-table td {
+            padding: 10px 4px;
+            border-bottom: 1px solid #374151;
+        }
+
+        .connection-status {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 16px;
+            background: #232c3d;
+            border: 1px solid #374151;
+            border-radius: 8px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.connected {
+            background: #10b981;
+        }
+
+        .status-indicator.disconnected {
+            background: #ef4444;
+            animation: none;
+        }
+
+        /* Admin Panel */
+        .admin-panel {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: #232c3d;
+            border: 2px solid #f59e0b;
+            border-radius: 8px;
+            padding: 20px;
+            width: 320px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            z-index: 100;
+        }
+
+        .admin-panel.hidden {
+            display: none;
+        }
+
+        .admin-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #374151;
+        }
+
+        .admin-badge {
+            background: #f59e0b;
+            color: #000;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .admin-form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .admin-form input {
+            padding: 10px 12px;
+            background: #1a1f2e;
+            border: 1px solid #374151;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 14px;
+        }
+
+        .admin-form input:focus {
+            outline: none;
+            border-color: #f59e0b;
+        }
+
+        .btn-admin {
+            padding: 12px;
+            background: #f59e0b;
+            border: none;
+            border-radius: 6px;
+            color: #000;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 4px;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-admin:hover {
+            background: #d97706;
+        }
+
+        .close-admin {
+            margin-left: auto;
+            cursor: pointer;
+            font-size: 20px;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+        }
+
+        .close-admin:hover {
+            opacity: 1;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1a1f2e;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4b5563;
+        }
+    </style>
+</head>
+<body>
+    <!-- Auth Modal -->
+    <div class="modal-overlay" id="authModal">
+        <div class="auth-modal">
+            <h2>Welcome to Trading Platform</h2>
+            <div class="auth-tabs">
+                <div class="auth-tab active" id="signinTab" onclick="switchAuthTab('signin')">Sign In</div>
+                <div class="auth-tab" id="loginTab" onclick="switchAuthTab('login')">Log In</div>
+            </div>
+            
+            <form class="auth-form" id="authForm" onsubmit="handleAuth(event)">
+                <div class="form-group">
+                    <label for="userID">User ID</label>
+                    <input type="text" id="userID" placeholder="Enter your user ID" required>
+                </div>
+                <div class="form-group" id="balanceGroup">
+                    <label for="balance">Initial Balance ($)</label>
+                    <input type="number" id="balance" placeholder="50000" value="50000" step="0.01">
+                </div>
+                <div class="error-message" id="authError"></div>
+                <button type="submit" class="btn-primary">Continue</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <h1>Stock Trading Platform</h1>
+        </div>
+        <div class="header-right">
+            <div class="nav-item active">Dashboard</div>
+            <div class="nav-item">Portfolio</div>
+            <div class="nav-item">History</div>
+            <div class="nav-item alerts-badge">
+                Alerts
+                <span class="badge">3</span>
+            </div>
+            <div class="nav-item">👤</div>
+            <div class="nav-item">🔔</div>
+        </div>
+    </div>
+
+    <!-- Stock Header -->
+    <div class="stock-header">
+        <div class="stock-info">
+            <div>
+                <div class="stock-title">
+                    <h2 id="stockSymbol">AAPL</h2>
+                    <span class="stock-subtitle" id="stockName">Apple Inc. - NASDAQ:AAPL</span>
+                </div>
+                <div class="stock-price-info">
+                    <span class="stock-price" id="currentPrice">$150.00</span>
+                    <span class="stock-change" id="priceChange">+1.25 (+0.84%)</span>
+                </div>
+            </div>
+            <div class="last-updated" id="lastUpdated">Updated: 12:30:48 AM</div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Order Book Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <h3>Order Book</h3>
+            </div>
+            
+            <div class="orderbook-section">
+                <h4>Buy Orders</h4>
+                <div class="orderbook-header">
+                    <span>Price</span>
+                    <span>Qty</span>
+                </div>
+                <div id="buyOrders">
+                    <!-- Will be populated from server -->
+                </div>
+            </div>
+
+            <div class="orderbook-section">
+                <h4>Sell Orders</h4>
+                <div class="orderbook-header">
+                    <span>Price</span>
+                    <span>Qty</span>
+                </div>
+                <div id="sellOrders">
+                    <!-- Will be populated from server -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Chart & Order Form -->
+        <div class="chart-panel">
+            <div class="chart-container">
+                <div class="panel-header">
+                    <h3>AAPL Price Chart</h3>
+                    <div class="chart-tabs">
+                        <div class="chart-tab active">5m</div>
+                        <div class="chart-tab">1H</div>
+                        <div class="chart-tab">1D</div>
+                        <div class="chart-tab">1W</div>
+                    </div>
+                </div>
+                <canvas id="priceChart"></canvas>
+            </div>
+
+            <div class="order-panel">
+                <div class="panel-header">
+                    <h3>Place Order</h3>
+                </div>
+                <div class="order-actions">
+                    <button class="action-btn buy active" onclick="setOrderSide('BUY')">Buy</button>
+                    <button class="action-btn sell" onclick="setOrderSide('SELL')">Sell</button>
+                </div>
+                <form class="order-form" onsubmit="placeOrder(event)">
+                    <select id="orderSymbol">
+                        <option value="AAPL">AAPL</option>
+                    </select>
+                    <input type="number" id="orderPrice" placeholder="150.00" value="150.00" step="0.01" required>
+                    <input type="number" id="orderQuantity" placeholder="10" value="10" min="1" required>
+                    <button type="submit" class="place-order-btn">PLACE ORDER</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Portfolio & Trades -->
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>Portfolio</h3>
+                    <span class="settings-icon">⚙️</span>
+                </div>
+                <div class="portfolio-user">
+                    <div class="user-avatar" id="userAvatar">W</div>
+                    <div>
+                        <div style="font-weight: 600; font-size: 15px;" id="userName">wewe</div>
+                    </div>
+                </div>
+                <div class="portfolio-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Cash:</span>
+                        <span class="stat-value" id="cashBalance">5,500.00</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">AAPL:</span>
+                        <span class="stat-value" id="aaplShares">30 shares</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>Recent Trades</h3>
+                    <span class="settings-icon">⚙️</span>
+                </div>
+                <div id="recentTrades">
+                    <!-- Will be populated from server -->
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <h3>Trade History</h3>
+                    <span class="settings-icon">⚙️</span>
+                </div>
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>TYPE</th>
+                            <th>PRICE</th>
+                            <th>TIME</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tradeHistoryTable">
+                        <!-- Will be populated from server -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="connection-status">
+        <span class="status-indicator disconnected" id="statusIndicator"></span>
+        <span id="statusText">Disconnected</span>
+    </div>
+
+    <!-- Admin Panel -->
+    <div class="admin-panel hidden" id="adminPanel">
+        <div class="admin-header">
+            <span class="admin-badge">ADMIN</span>
+            <h3 style="font-size: 16px; font-weight: 600;">Add New Stock</h3>
+            <span class="close-admin" onclick="document.getElementById('adminPanel').classList.add('hidden')">✕</span>
+        </div>
+        <form class="admin-form" onsubmit="addNewStock(event)">
+            <input type="text" id="newStockSymbol" placeholder="Stock Symbol (e.g., TSLA)" required>
+            <input type="number" id="newStockPrice" placeholder="Initial Price (e.g., 250.00)" step="0.01" required>
+            <input type="number" id="newStockQuantity" placeholder="Quantity to Sell (e.g., 1000)" min="1" required>
+            <div class="error-message" id="adminError"></div>
+            <button type="submit" class="btn-admin">ADD STOCK</button>
+        </form>
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #374151; font-size: 12px; color: #9ca3af;">
+            This will create the stock and place it as a sell order at the specified price.
+        </div>
+    </div>
+
+    <script>
+        // WebSocket Configuration
+        const WS_URL = 'ws://localhost:8080';
+        
+        let ws = null;
+        let currentUser = null;
+        let currentOrderSide = 'BUY';
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 10;
+
+        // Auth Functions
+        let currentAuthMode = 'signin';
+
+        function switchAuthTab(mode) {
+            currentAuthMode = mode;
+            const signinTab = document.getElementById('signinTab');
+            const loginTab = document.getElementById('loginTab');
+            
+            if (mode === 'signin') {
+                signinTab.classList.add('active');
+                loginTab.classList.remove('active');
+            } else {
+                loginTab.classList.add('active');
+                signinTab.classList.remove('active');
+            }
+            
+            document.getElementById('balanceGroup').style.display = 
+                mode === 'signin' ? 'flex' : 'none';
+        }
+
+        // WebSocket Connection
+        function connectWebSocket() {
+            try {
+                ws = new WebSocket(WS_URL);
+                
+                ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    updateConnectionStatus(true);
+                    reconnectAttempts = 0;
+                };
+                
+                ws.onmessage = (event) => {
+                    try {
+                        const response = JSON.parse(event.data);
+                        handleServerResponse(response);
+                    } catch (err) {
+                        console.error('Failed to parse message:', err);
+                    }
+                };
+                
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    updateConnectionStatus(false);
+                };
+                
+                ws.onclose = () => {
+                    console.log('WebSocket disconnected');
+                    updateConnectionStatus(false);
+                    scheduleReconnect();
+                };
+                
+            } catch (error) {
+                console.error('Connection error:', error);
+                updateConnectionStatus(false);
+                scheduleReconnect();
+            }
+        }
+
+        function scheduleReconnect() {
+            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                reconnectAttempts++;
+                console.log(`Reconnecting in 3 seconds... (Attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+                setTimeout(() => connectWebSocket(), 3000);
+            } else {
+                console.error('Max reconnection attempts reached');
+            }
+        }
+
+        function updateConnectionStatus(connected) {
+            const indicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('statusText');
+            
+            if (connected) {
+                indicator.classList.remove('disconnected');
+                indicator.classList.add('connected');
+                statusText.textContent = 'Connected';
+            } else {
+                indicator.classList.add('disconnected');
+                indicator.classList.remove('connected');
+                statusText.textContent = 'Disconnected';
+            }
+        }
+
+        // Send message via WebSocket
+        function sendMessage(message) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(message));
+            } else {
+                console.error('WebSocket is not connected');
+                alert('Not connected to server. Please wait...');
+            }
+        }
+
+        // Handle server responses
+        let pendingAuthResolve = null;
+        let pendingRequests = {};
+
+        function handleServerResponse(response) {
+            console.log('Server response:', response);
+            
+            // Handle auth responses
+            if (pendingAuthResolve) {
+                pendingAuthResolve(response);
+                pendingAuthResolve = null;
+                return;
+            }
+            
+            // Handle GET_PORTFOLIO response
+            if (response.status === 'success' && response.data) {
+                if (response.data.userID || response.data.cash) {
+                    updatePortfolio(response.data);
+                }
+                // Handle GET_ORDERBOOK response
+                else if (response.data.bids || response.data.asks) {
+                    renderOrderBook(response.data);
+                }
+                // Handle GET_TRADES response
+                else if (Array.isArray(response.data)) {
+                    renderTrades(response.data);
+                }
+            }
+            
+            // Handle PLACE_ORDER response
+            if (response.status === 'success' && response.data && response.data.orderID) {
+                alert(`Order placed successfully! Order ID: ${response.data.orderID}`);
+                setTimeout(() => {
+                    loadPortfolio();
+                    loadOrderBook();
+                    loadTrades();
+                }, 200);
+            }
+        }
+
+        // Authentication
+        async function handleAuth(e) {
+            e.preventDefault();
+            const userID = document.getElementById('userID').value.trim();
+            const balance = parseFloat(document.getElementById('balance').value) || 50000;
+            const errorEl = document.getElementById('authError');
+            
+            errorEl.classList.remove('show');
+            
+            if (!userID) {
+                errorEl.textContent = 'Please enter a user ID';
+                errorEl.classList.add('show');
+                return;
+            }
+
+            if (ws.readyState !== WebSocket.OPEN) {
+                errorEl.textContent = 'Not connected to server. Please wait...';
+                errorEl.classList.add('show');
+                return;
+            }
+            
+            try {
+                const type = currentAuthMode === 'signin' ? 'SIGN_IN' : 'LOG_IN';
+                const data = { userID };
+                if (type === 'SIGN_IN') {
+                    data.balance = balance;
+                }
+                
+                const response = await new Promise((resolve) => {
+                    pendingAuthResolve = resolve;
+                    sendMessage({ type, data });
+                    
+                    setTimeout(() => {
+                        if (pendingAuthResolve) {
+                            pendingAuthResolve = null;
+                            resolve({ status: 'error', message: 'Request timeout' });
+                        }
+                    }, 5000);
+                });
+                
+                if (response.status === 'success') {
+                    currentUser = userID;
+                    document.getElementById('authModal').classList.add('hidden');
+                    document.getElementById('userName').textContent = userID;
+                    document.getElementById('userAvatar').textContent = userID[0].toUpperCase();
+                    
+                    // Check if admin user
+                    if (userID === 'admin123') {
+                        document.getElementById('adminPanel').classList.remove('hidden');
+                    }
+                    
+                    // Load initial data
+                    loadPortfolio();
+                    loadOrderBook();
+                    loadTrades();
+                    
+                    // Start auto-refresh
+                    startAutoRefresh();
+                } else {
+                    errorEl.textContent = response.message || 'Authentication failed';
+                    errorEl.classList.add('show');
+                }
+            } catch (err) {
+                console.error('Auth error:', err);
+                errorEl.textContent = 'Authentication failed. Please try again.';
+                errorEl.classList.add('show');
+            }
+        }
+
+        // Order Side Selection
+        function setOrderSide(side) {
+            currentOrderSide = side;
+            const buyBtn = document.querySelector('.action-btn.buy');
+            const sellBtn = document.querySelector('.action-btn.sell');
+            
+            if (side === 'BUY') {
+                buyBtn.classList.add('active');
+                sellBtn.classList.remove('active');
+            } else {
+                sellBtn.classList.add('active');
+                buyBtn.classList.remove('active');
+            }
+        }
+
+        // Place Order
+        async function placeOrder(e) {
+            e.preventDefault();
+            
+            if (!currentUser) {
+                alert('Please log in first');
+                return;
+            }
+            
+            const symbol = document.getElementById('orderSymbol').value;
+            const price = parseFloat(document.getElementById('orderPrice').value);
+            const quantity = parseInt(document.getElementById('orderQuantity').value);
+            
+            if (!symbol || price <= 0 || quantity <= 0) {
+                alert('Please enter valid order details');
+                return;
+            }
+            
+            sendMessage({
+                type: 'PLACE_ORDER',
+                data: { symbol, side: currentOrderSide, price, quantity }
+            });
+            
+            // Wait for response and refresh
+            setTimeout(() => {
+                loadPortfolio();
+                loadOrderBook();
+                loadTrades();
+            }, 500);
+        }
+
+        // Add New Stock (Admin Only)
+        async function addNewStock(e) {
+            e.preventDefault();
+            
+            const errorEl = document.getElementById('adminError');
+            errorEl.classList.remove('show');
+            
+            const symbol = document.getElementById('newStockSymbol').value.trim().toUpperCase();
+            const price = parseFloat(document.getElementById('newStockPrice').value);
+            const quantity = parseInt(document.getElementById('newStockQuantity').value);
+            
+            if (!symbol || price <= 0 || quantity <= 0) {
+                errorEl.textContent = 'Please enter valid stock details';
+                errorEl.classList.add('show');
+                return;
+            }
+            
+            // First, add the stock
+            sendMessage({
+                type: 'ADD_STOCK',
+                data: { symbol }
+            });
+            
+            // Wait a bit, then place the sell order
+            setTimeout(() => {
+                sendMessage({
+                    type: 'PLACE_ORDER',
+                    data: { 
+                        symbol, 
+                        side: 'SELL', 
+                        price, 
+                        quantity 
+                    }
+                });
+                
+                alert(`Stock ${symbol} added successfully!\n${quantity} shares listed at $${price.toFixed(2)}`);
+                
+                // Clear form
+                document.getElementById('newStockSymbol').value = '';
+                document.getElementById('newStockPrice').value = '';
+                document.getElementById('newStockQuantity').value = '';
+                
+                // Update stock selector
+                const selector = document.getElementById('orderSymbol');
+                if (!Array.from(selector.options).find(opt => opt.value === symbol)) {
+                    const option = document.createElement('option');
+                    option.value = symbol;
+                    option.textContent = symbol;
+                    selector.appendChild(option);
+                }
+                
+                // Refresh data
+                setTimeout(() => {
+                    loadOrderBook();
+                    loadPortfolio();
+                }, 500);
+            }, 300);
+        }
+
+        // Load Portfolio
+        function loadPortfolio() {
+            sendMessage({ type: 'GET_PORTFOLIO', data: {} });
+        }
+
+        // Update Portfolio
+        function updatePortfolio(portfolio) {
+            if (!portfolio) return;
+            
+            const cash = portfolio.cash?.available || 0;
+            const aaplShares = portfolio.holdings?.AAPL || 0;
+            
+            document.getElementById('cashBalance').textContent = 
+                cash.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            
+            document.getElementById('aaplShares').textContent = aaplShares + ' shares';
+        }
+
+        // Load Order Book
+        function loadOrderBook() {
+            sendMessage({ type: 'GET_ORDERBOOK', data: { symbol: 'AAPL' } });
+        }
+
+        // Render Order Book
+        function renderOrderBook(orderBook) {
+            if (!orderBook) return;
+            
+            const buyOrdersEl = document.getElementById('buyOrders');
+            const sellOrdersEl = document.getElementById('sellOrders');
+            
+            if (orderBook.bids && orderBook.bids.length > 0) {
+                buyOrdersEl.innerHTML = orderBook.bids.slice(0, 5).map(order => `
+                    <div class="orderbook-row">
+                        <span class="price-buy">▲ ${order.price.toFixed(2)}</span>
+                        <span>${order.quantity}</span>
+                    </div>
+                `).join('');
+            } else {
+                buyOrdersEl.innerHTML = '<div style="text-align: center; color: #6b7280; padding: 20px; font-size: 13px;">No buy orders</div>';
+            }
+            
+            if (orderBook.asks && orderBook.asks.length > 0) {
+                sellOrdersEl.innerHTML = orderBook.asks.slice(0, 5).map(order => `
+                    <div class="orderbook-row">
+                        <span class="price-sell">▼ ${order.price.toFixed(2)}</span>
+                        <span>${order.quantity}</span>
+                    </div>
+                `).join('');
+            } else {
+                sellOrdersEl.innerHTML = '<div style="text-align: center; color: #6b7280; padding: 20px; font-size: 13px;">No sell orders</div>';
+            }
+        }
+
+        // Load Trades
+        function loadTrades() {
+            sendMessage({ type: 'GET_TRADES', data: {} });
+        }
+
+        // Render Trades
+        function renderTrades(trades) {
+            if (!trades || trades.length === 0) {
+                document.getElementById('recentTrades').innerHTML = '<div style="text-align: center; color: #6b7280; padding: 20px; font-size: 13px;">No trades yet</div>';
+                document.getElementById('tradeHistoryTable').innerHTML = '<tr><td colspan="3" style="text-align: center; color: #6b7280;">No history yet</td></tr>';
+                return;
+            }
+            
+            const recentTradesEl = document.getElementById('recentTrades');
+            recentTradesEl.innerHTML = trades.slice(0, 3).map(trade => `
+                <div class="trade-item">
+                    <div class="trade-icon ${trade.side.toLowerCase()}">
+                        ${trade.side === 'BUY' ? '↑' : '↓'}
+                    </div>
+                    <div class="trade-details">
+                        <div class="trade-action">${trade.side} ${trade.quantity} @ ${trade.price.toFixed(2)}</div>
+                    </div>
+                </div>
+            `).join('');
+            
+            const historyEl = document.getElementById('tradeHistoryTable');
+            historyEl.innerHTML = trades.slice(0, 5).map(trade => `
+                <tr>
+                    <td>${String(trade.tradeID || '---').padStart(3, '0')}</td>
+                    <td>${trade.price.toFixed(2)}</td>
+                    <td>${trade.timestamp || getCurrentTime()}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Add single trade to history
+        function addTradeToHistory(trade) {
+            loadTrades(); // Reload all trades for simplicity
+        }
+
+        // Get current time
+        function getCurrentTime() {
+            const now = new Date();
+            return now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        // Update last updated time
+        function updateLastUpdated() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('en-US', { hour12: true });
+            document.getElementById('lastUpdated').textContent = `Updated: ${timeString}`;
+        }
+
+        // Auto refresh
+        let refreshInterval = null;
+
+        function startAutoRefresh() {
+            if (refreshInterval) return;
+            
+            refreshInterval = setInterval(() => {
+                if (currentUser && ws && ws.readyState === WebSocket.OPEN) {
+                    loadPortfolio();
+                    loadOrderBook();
+                    loadTrades();
+                    updateLastUpdated();
+                }
+            }, 5000);
+        }
+
+        function stopAutoRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+                refreshInterval = null;
+            }
+        }
+
+        // Initialize Chart
+        function initChart() {
+            const canvas = document.getElementById('priceChart');
+            const ctx = canvas.getContext('2d');
+            
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+            
+            const data = generateMockChartData();
+            drawCandlestickChart(ctx, canvas.width, canvas.height, data);
+        }
+
+        function generateMockChartData() {
+            const data = [];
+            let price = 148;
+            
+            for (let i = 0; i < 60; i++) {
+                const change = (Math.random() - 0.5) * 2;
+                price += change;
+                
+                const open = price;
+                const close = price + (Math.random() - 0.5) * 1.5;
+                const high = Math.max(open, close) + Math.random() * 0.8;
+                const low = Math.min(open, close) - Math.random() * 0.8;
+                
+                data.push({ open, high, low, close });
+            }
+            
+            return data;
+        }
+
+        function drawCandlestickChart(ctx, width, height, data) {
+            ctx.clearRect(0, 0, width, height);
+            
+            let minPrice = Infinity;
+            let maxPrice = -Infinity;
+            
+            data.forEach(candle => {
+                minPrice = Math.min(minPrice, candle.low);
+                maxPrice = Math.max(maxPrice, candle.high);
+            });
+            
+            const priceRange = maxPrice - minPrice;
+            const padding = 40;
+            const chartHeight = height - padding - 80;
+            const chartWidth = width - padding * 2;
+            const candleWidth = (chartWidth / data.length) * 0.7;
+            const spacing = chartWidth / data.length;
+            
+            // Draw grid
+            ctx.strokeStyle = '#374151';
+            ctx.lineWidth = 1;
+            
+            for (let i = 0; i <= 5; i++) {
+                const y = padding + (chartHeight / 5) * i;
+                ctx.beginPath();
+                ctx.moveTo(padding, y);
+                ctx.lineTo(width - padding, y);
+                ctx.stroke();
+            }
+            
+            // Draw candlesticks
+            data.forEach((candle, index) => {
+                const x = padding + index * spacing + spacing / 2;
+                
+                const openY = padding + chartHeight - ((candle.open - minPrice) / priceRange * chartHeight);
+                const closeY = padding + chartHeight - ((candle.close - minPrice) / priceRange * chartHeight);
+                const highY = padding + chartHeight - ((candle.high - minPrice) / priceRange * chartHeight);
+                const lowY = padding + chartHeight - ((candle.low - minPrice) / priceRange * chartHeight);
+                
+                const isGreen = candle.close > candle.open;
+                
+                // Draw wick
+                ctx.strokeStyle = isGreen ? '#10b981' : '#ef4444';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x, highY);
+                ctx.lineTo(x, lowY);
+                ctx.stroke();
+                
+                // Draw body
+                ctx.fillStyle = isGreen ? '#10b981' : '#ef4444';
+                const bodyTop = Math.min(openY, closeY);
+                const bodyHeight = Math.abs(closeY - openY) || 1;
+                ctx.fillRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight);
+            });
+            
+            // Draw price labels
+            ctx.fillStyle = '#9ca3af';
+            ctx.font = '11px sans-serif';
+            ctx.textAlign = 'right';
+            
+            for (let i = 0; i <= 5; i++) {
+                const price = minPrice + (priceRange / 5) * i;
+                const y = padding + chartHeight - (chartHeight / 5) * i;
+                ctx.fillText('$' + price.toFixed(2), padding - 10, y + 4);
+            }
+            
+            // Draw volume bars
+            const volumeHeight = 60;
+            const volumeTop = height - 20;
+            
+            data.forEach((candle, index) => {
+                const x = padding + index * spacing + spacing / 2;
+                const volume = Math.random() * 100;
+                const barHeight = (volume / 100) * volumeHeight;
+                
+                ctx.fillStyle = candle.close > candle.open ? 
+                    'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)';
+                ctx.fillRect(x - candleWidth / 2, volumeTop - barHeight, candleWidth, barHeight);
+            });
+        }
+
+        // Initialize on page load
+        window.addEventListener('load', () => {
+            connectWebSocket();
+            initChart();
+            updateLastUpdated();
+            
+            window.addEventListener('resize', () => {
+                initChart();
+            });
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            stopAutoRefresh();
+            if (ws) {
+                ws.close();
+            }
+        });
+    </script>
+</body>
+</html>

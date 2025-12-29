@@ -63,6 +63,21 @@ TradeRecord Trade::toRecord() const {
     return rec;
 }
 
+json Trade::toJSON() const
+{
+    return {
+            {"tradeID", tradeID},
+            {"buyOrderID", buyOrderID},
+            {"sellOrderID", sellOrderID},
+            {"buyUserID", buyUserID},
+            {"sellUserID", sellUserID},
+            {"symbol", symbol},
+            {"price", price},
+            {"quantity", quantity},
+            {"timestamp", timestamp}
+        };
+}
+
 Trade Trade::fromRecord(const TradeRecord& rec) {
     Trade trade;
     

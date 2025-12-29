@@ -3,6 +3,8 @@
 
 #include "../storage/DiskTypes.h"  // DiskOffset type
 #include <cstddef>
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
 
 struct OrderNode {
     DiskOffset orderOffset;  // Disk offset of Order
@@ -33,6 +35,7 @@ public:
     // Print the queue (loads orders from storage)
     void printQueue(OrderStorage& storage) const;
     void printDetailedQueue(OrderStorage& storage) const;
+    json toJSON(OrderStorage& storage) const;
 
     void remove(DiskOffset offset);
 };

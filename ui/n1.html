@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Stock Trading Platform</title>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@3.9.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+    body { margin: 0; font-family: 'Segoe UI', sans-serif; background:#1e1e2f; color:#fff;}
+    header { display:flex; justify-content:space-between; padding:10px 20px; background:#252540; align-items:center;}
+    header a { color:#fff; text-decoration:none; margin-left:15px;}
+    .container { display:flex; flex-wrap:wrap; padding:20px;}
+    .panel { background:#252540; border-radius:10px; padding:15px; margin:10px; flex:1 1 300px; min-width:280px;}
+    .panel h2 { margin-top:0; }
+    button { padding:10px 15px; border:none; border-radius:5px; cursor:pointer; }
+    .buy-btn { background:#3b82f6; color:#fff; }
+    .sell-btn { background:#555; color:#fff; }
+    input, select { width:100%; padding:8px; margin:5px 0 10px; border-radius:5px; border:none; background:#1e1e2f; color:#fff;}
+    table { width:100%; border-collapse:collapse; }
+    th, td { text-align:left; padding:5px; border-bottom:1px solid #333; }
+    #loginModal { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); display:flex; justify-content:center; align-items:center; z-index:100; }
+    #loginModal .modal-content { background:#252540; padding:30px; border-radius:10px; width:300px; }
+    #status { position:fixed; bottom:10px; right:10px; background:#333; padding:8px 12px; border-radius:10px; font-size:12px; }
+</style>
+</head>
+<body>
+
+<header>
+    <div>Stock Trading Platform</div>
+    <div>
+        <a href="#" id="dashboardLink">Dashboard</a>
+        <a href="#" id="portfolioLink">Portfolio</a>
+        <a href="#" id="historyLink">History</a>
+        <a href="#" id="alertsLink">Alerts</a>
+        <a href="#" id="profileIcon">👤</a>
+    </div>
+</header>
+
+<div class="container">
+    <div class="panel" style="flex:2 1 500px;">
+        <h2 id="stockName">AAPL</h2>
+        <div id="stockPrice" style="font-size:24px; color:#4ade80;">$150.00</div>
+        <div id="priceChange" style="font-size:14px;color:#4ade80;">+0.84%</div>
+        <div id="chart" style="height:300px; margin-top:10px;"></div>
+        <div style="margin-top:10px;">
+            <button class="buy-btn" id="buyTab">Buy</button>
+            <button class="sell-btn" id="sellTab">Sell</button>
+            <select id="symbolSelect"><option value="AAPL">AAPL</option></select>
+            <input type="number" id="priceInput" placeholder="Price" value="150.00"/>
+            <input type="number" id="qtyInput" placeholder="Quantity" value="10"/>
+            <button class="buy-btn" id="placeOrderBtn" style="width:100%;">PLACE ORDER</button>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h3>Order Book</h3>
+        <table>
+            <thead><tr><th>Buy Price</th><th>Qty</th></tr></thead>
+            <tbody id="buyOrders"></tbody>
+        </table>
+        <table style="margin-top:10px;">
+            <thead><tr><th>Sell Price</th><th>Qty</th></tr></thead>
+            <tbody id="sellOrders"></tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h3>Portfolio</h3>
+        <div id="portfolioCash">Cash: $0</div>
+        <div id="portfolioStocks">Stocks: </div>
+    </div>
+
+    <div class="panel" id="recentTradesPanel">
+        <h3>Recent Trades</h3>
+        <table>
+            <thead><tr><th>Type</th><th>Price</th><th>Qty</th></tr></thead>
+            <tbody id="recentTrades"></tbody>
+        </table>
+    </div>
+
+    <div class="panel" id="adminPanel" style="display:none;">
+        <h3>Admin: Add Stock</h3>
+        <input type="text" id="addStockSymbol" placeholder="Symbol"/>
+        <input type="number" id="addStockQty" placeholder="Quantity"/>
+        <button id="addStockBtn" class="buy-btn">Add Stock</button>
+    </div>
+</div>
+
+<div id="status">Disconnected</div>
+
+<!-- Login Modal -->
+<div id="loginModal">
+    <div class="modal-content">
+        <h3>Login / Sign In</h3>
+        <input type="text" id="loginUserID" placeholder="User ID"/>
+        <input type="number" id="loginBalance" placeholder="Starting Balance"/>
+        <button id="signInBtn" class="buy-btn">Sign In</button>
+        <button id="logInBtn" class="sell-btn">Log In</button>
+    </div>
+</div>
+
+<script>
+let ws;
+let userID = '';
+let isAdmin = false;
+let side = 'BUY';
+let chart;
+
+function initChart() {
+    chart = LightweightCharts.createChart(document.getElementById('chart'), {layout:{background:'#1e1e2f',textColor:'#fff'},grid:{vertLines:{color:'#333'},horzLines:{color:'#333'}}});
+    let candleSeries = chart.addCandlestickSeries();
+    candleSeries.setData([]);
+    return candleSeries;
+}
+
+let candleSeries = initChart();
+
+function connect() {
+    ws = new WebSocket('ws://localhost:8080'); // Replace with your server
+    ws.onopen = () => { document.getElementById('status').innerText='Connected'; }
+    ws.onclose = () => { document.getElementById('status').innerText='Disconnected'; setTimeout(connect,2000); }
+    ws.onmessage = (msg) => { handleMessage(JSON.parse(msg.data)); }
+}
+
+function handleMessage(msg) {
+    if(msg.type === 'UPDATE_ORDERBOOK') updateOrderBook(msg.data);
+    if(msg.type === 'UPDATE_PORTFOLIO') updatePortfolio(msg.data);
+    if(msg.type === 'UPDATE_TRADES') updateTrades(msg.data);
+    if(msg.type === 'UPDATE_PRICE') updateChart(msg.data);
+}
+
+function updateOrderBook(data){
+    let buyHTML = '', sellHTML='';
+    data.buy.forEach(o => buyHTML+=`<tr><td>${o.price}</td><td>${o.quantity}</td></tr>`);
+    data.sell.forEach(o => sellHTML+=`<tr><td>${o.price}</td><td>${o.quantity}</td></tr>`);
+    document.getElementById('buyOrders').innerHTML=buyHTML;
+    document.getElementById('sellOrders').innerHTML=sellHTML;
+}
+
+function updatePortfolio(data){
+    document.getElementById('portfolioCash').innerText = 'Cash: $'+data.cash.toFixed(2);
+    let stocks = Object.entries(data.stocks||{}).map(([k,v])=>`${k}: ${v}`).join(', ');
+    document.getElementById('portfolioStocks').innerText='Stocks: '+stocks;
+}
+
+function updateTrades(data){
+    let html = '';
+    data.forEach(t => html+=`<tr><td>${t.side}</td><td>${t.price}</td><td>${t.quantity}</td></tr>`);
+    document.getElementById('recentTrades').innerHTML=html;
+}
+
+function updateChart(data){
+    candleSeries.update({time:Date.now()/1000,open:data.open,high:data.high,low:data.low,close:data.close});
+}
+
+// Login/SignIn
+document.getElementById('signInBtn').onclick = () => {
+    let uid = document.getElementById('loginUserID').value;
+    let balance = parseFloat(document.getElementById('loginBalance').value)||0;
+    ws.send(JSON.stringify({type:'SIGN_IN',data:{userID:uid,balance}}));
+    userID = uid;
+    afterLogin();
+}
+document.getElementById('logInBtn').onclick = () => {
+    let uid = document.getElementById('loginUserID').value;
+    ws.send(JSON.stringify({type:'LOG_IN',data:{userID:uid}}));
+    userID = uid;
+    afterLogin();
+}
+
+function afterLogin(){
+    isAdmin = userID==='admin123';
+    if(isAdmin) document.getElementById('adminPanel').style.display='block';
+    document.getElementById('loginModal').style.display='none';
+}
+
+// Buy/Sell toggle
+document.getElementById('buyTab').onclick=()=>{side='BUY';}
+document.getElementById('sellTab').onclick=()=>{side='SELL';}
+
+// Place Order
+document.getElementById('placeOrderBtn').onclick=()=>{
+    let symbol = document.getElementById('symbolSelect').value;
+    let price = parseFloat(document.getElementById('priceInput').value);
+    let qty = parseInt(document.getElementById('qtyInput').value);
+    ws.send(JSON.stringify({type:'PLACE_ORDER',data:{userID, symbol, side, price, quantity:qty}}));
+}
+
+// Admin Add Stock
+document.getElementById('addStockBtn').onclick=()=>{
+    let symbol = document.getElementById('addStockSymbol').value;
+    let qty = parseInt(document.getElementById('addStockQty').value);
+    ws.send(JSON.stringify({type:'ADD_STOCK',data:{userID, symbol, quantity:qty}}));
+}
+
+connect();
+</script>
+</body>
+</html>

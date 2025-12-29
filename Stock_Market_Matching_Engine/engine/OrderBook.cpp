@@ -352,6 +352,57 @@ void OrderBook::printOrderBook() {
     pthread_mutex_unlock(&bookLock);
 }
 
+json OrderBook::getOrderBook() {
+    json result;
+    result["symbol"] = symbol;
+    result["buy"] = json::array();
+    result["sell"] = json::array();
+
+    pthread_mutex_lock(&bookLock);
+
+    /* ================= BUY SIDE ================= */
+    double price = buyTree->getHighestKey();
+    double lowest = buyTree->getLowestKey();
+
+    while (price != -1 && price >= lowest) {
+        OrderQueue* q = buyTree->search(price);
+
+        if (q && q->getSize() > 0) {
+            json level;
+            level["price"] = price;
+            level["orders"] = q->toJSON(orderStorage);  // 👈 clean delegation
+            result["buy"].push_back(level);
+        }
+
+        double prev = buyTree->prevKey(price);
+        if (prev == price || prev == -1) break;
+        price = prev;
+    }
+
+    /* ================= SELL SIDE ================= */
+    price = sellTree->getLowestKey();
+    double highest = sellTree->getHighestKey();
+
+    while (price != -1 && price <= highest) {
+        OrderQueue* q = sellTree->search(price);
+
+        if (q && q->getSize() > 0) {
+            json level;
+            level["price"] = price;
+            level["orders"] = q->toJSON(orderStorage);
+            result["sell"].push_back(level);
+        }
+
+        double next = sellTree->nextKey(price);
+        if (next == price || next == -1) break;
+        price = next;
+    }
+
+    pthread_mutex_unlock(&bookLock);
+    return result;
+}
+
+
 string OrderBook::getSymbol() const {
     return symbol;
 }

@@ -97,30 +97,44 @@ int TradeStorage::getTradeCount() {
     return tradeIDToOffsetMap.size();
 }
 
-// NEW: Load index from file
 void TradeStorage::loadIndex() {
     ifstream indexFile("data/trades.idx", ios::binary);
-    
+
     if (!indexFile) {
-        cout << "Trade index not found, rebuilding...\n";
+        cout << "Trade index not found, rebuilding from trades.dat...\n";
         rebuildIndex();
         return;
     }
-    
-    size_t count;
+
+    size_t count = 0;
     indexFile.read(reinterpret_cast<char*>(&count), sizeof(count));
-    
-    for (size_t i = 0; i < count; i++) {
+
+    if (!indexFile || count == 0 || count > 1000000) {
+        cout << "Trade index invalid or empty, rebuilding from trades.dat...\n";
+        indexFile.close();
+        rebuildIndex();
+        return;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
         int tradeID;
         indexFile.read(reinterpret_cast<char*>(&tradeID), sizeof(tradeID));
-        
+
         DiskOffset offset;
         indexFile.read(reinterpret_cast<char*>(&offset), sizeof(offset));
-        
+
+        if (!indexFile) {
+            cout << "Corrupted trade index entry, rebuilding...\n";
+            indexFile.close();
+            rebuildIndex();
+            return;
+        }
+
         tradeIDToOffsetMap[tradeID] = offset;
     }
-    
+
     indexFile.close();
+    cout << "Loaded trade index: " << tradeIDToOffsetMap.size() << " trades.\n";
 }
 
 // NEW: Save index to file
@@ -144,27 +158,35 @@ void TradeStorage::saveIndex() {
     indexFile.close();
 }
 
-// NEW: Rebuild index from data file
 void TradeStorage::rebuildIndex() {
     tradeIDToOffsetMap.clear();
-    
+
     const size_t recSize = sizeof(TradeRecord);
+
     ifstream f("data/trades.dat", ios::binary | ios::ate);
-    if (!f) return;
-    
-    size_t fileSize = (size_t)f.tellg();
+    if (!f) {
+        cout << "trades.dat not found, nothing to rebuild\n";
+        saveIndex();
+        return;
+    }
+
+    size_t fileSize = static_cast<size_t>(f.tellg());
     f.close();
-    
+
+    if (fileSize < recSize) {
+        cout << "No trades found in trades.dat\n";
+        saveIndex();
+        return;
+    }
+
     for (size_t rawOff = 0; rawOff + recSize <= fileSize; rawOff += recSize) {
         TradeRecord rec;
-        storage.read(rawOff, &rec, recSize);
-        
+        storage.read(rawOff, &rec, recSize);  // your StorageManager read
         Trade t = Trade::fromRecord(rec);
         DiskOffset storedOff = static_cast<DiskOffset>(rawOff) + 1;
-        
         tradeIDToOffsetMap[t.tradeID] = storedOff;
     }
-    
+
     cout << "Rebuilt trade index: " << tradeIDToOffsetMap.size() << " trades.\n";
     saveIndex();
 }

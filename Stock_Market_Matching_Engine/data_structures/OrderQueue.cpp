@@ -96,7 +96,6 @@ void OrderQueue::printDetailedQueue(OrderStorage& storage) const {
     }
 }
 
-
 void OrderQueue::remove(DiskOffset offset) {
     if (!front) return;
     
@@ -131,3 +130,26 @@ void OrderQueue::remove(DiskOffset offset) {
     }
     std::cerr << "[DBG] OrderQueue::remove offset not found=" << offset << "\n";
 }
+
+json OrderQueue::toJSON(OrderStorage& storage) const {
+    json orders = json::array();
+
+    OrderNode* current = front;
+    while (current) {
+        Order o = storage.load(current->orderOffset);
+
+        orders.push_back({
+            {"orderID", o.getOrderID()},
+            {"userID",  o.userID},
+            {"quantity", o.getRemainingQuantity()},
+            {"price",   o.getPrice()},
+            {"status",  o.status}
+        });
+
+        current = current->next;
+    }
+
+    return orders;
+}
+
+
