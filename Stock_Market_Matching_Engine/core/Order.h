@@ -7,7 +7,9 @@
 #include <ctime>
 #include <cstdint>
 #include <cstring>
-
+#include <nlohmann/json.hpp>
+#include <string>
+using json = nlohmann::json;
 using namespace std;
 
 
@@ -21,6 +23,19 @@ struct OrderRecord {
     int32_t remainingQty;
     char status;      // 'A','F','P','C'
     int64_t timestamp;
+    json toJSON() const {
+        return {
+            {"orderID", orderID},
+            {"userID", string(userID)},
+            {"symbol", string(symbol)},
+            {"side", (1, side == 'B' ? "BUY" : "SELL")},
+            {"price", price},
+            {"quantity", quantity},
+            {"remainingQty", remainingQty},
+            {"status", string(1, status)},
+            {"timestamp", timestamp}
+        };
+    }
 };
 
 

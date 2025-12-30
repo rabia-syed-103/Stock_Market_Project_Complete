@@ -45,6 +45,9 @@ public:
                 else if(type == "GET_ORDERBOOK") response = handleGetOrderBook(data);
                 else if(type == "GET_TRADES") response = handleGetTrades(data);
                 else if(type == "ADD_STOCK") response = handleAddStock(data);
+                else if(type == "GET_MARKET") {    response = handleGetMarket();
+}
+
                 else response = { {"status", "error"}, {"message", "Unknown request type"} };
             }
         } catch(const std::exception& e) {
@@ -108,6 +111,7 @@ private:
         Order* order = engine.placeOrder(data["userID"], symbol, side, price, quantity);
         if(!order)
             return { {"status", "error"}, {"message", "Failed to place order"} };
+        cout << "Placed order: " << order->toString() << "\n";
         return {
             {"status", "success"},
             {"data", {
@@ -169,7 +173,8 @@ private:
     json handleAddStock(const json& data) {
         std::string symbol = data.value("symbol", "");
         int qty = data.value("quantity", 0);
-
+        if(data["userID"] != "admin123")
+        return { {"status","error"}, {"message","Permission denied"} };
         if (symbol.empty()) return { {"status", "error"}, {"message", "Invalid symbol"} };
         if (qty <= 0)
     return { {"status","error"}, {"message","Invalid quantity"} };
@@ -180,6 +185,10 @@ private:
         else
             return { {"status", "error"}, {"message", "Failed to add stock"} };
     }
+    json handleGetMarket() {
+    auto symbols = engine.getAllSymbols(); // return vector<string>
+    return { {"status","success"}, {"data", symbols} };
+}
     // In RequestHandler.h
     
 };

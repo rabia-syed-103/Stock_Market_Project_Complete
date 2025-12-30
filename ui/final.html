@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Stock Trading Platform</title>
+<style>
+body {margin:0;font-family:sans-serif;background:#1e1e2f;color:#fff;}
+button{cursor:pointer;}
+input{background:#2b2b3d;color:#fff;border:1px solid #444;padding:6px;border-radius:4px;width:100%;}
+.container{max-width:1200px;margin:auto;padding:20px;}
+.nav-tabs{display:flex;gap:10px;margin-bottom:20px;}
+.nav-tabs button{padding:10px;background:#2b2b3d;border:none;color:#aaa;border-radius:4px;}
+.nav-tabs button.active{border-bottom:2px solid #4f90ff;color:#fff;}
+.card{background:#2b2b3d;padding:15px;margin-bottom:15px;border-radius:6px;border:1px solid #444;}
+.grid{display:grid;gap:15px;}
+.grid-2{grid-template-columns:1fr 1fr;}
+.success{color:#0f0;} .error{color:#f00;} .info{color:#0af;}
+</style>
+
+</head>
+<body>
+<div class="container">
+
+<div id="login-screen">
+  <h1>Trading Platform</h1>
+  <div id="connection-status" class="info">Connecting...</div>
+  <div style="margin:10px 0;">
+    <button onclick="setAuthMode('login')">Login</button>
+    <button onclick="setAuthMode('signin')">Sign Up</button>
+  </div>
+  <form id="login-form">
+    <input type="text" id="login-userid" placeholder="User ID"/>
+    <button type="submit">Login</button>
+  </form>
+  <form id="signin-form" style="display:none;">
+    <input type="text" id="signin-userid" placeholder="User ID"/>
+    <input type="number" id="signin-balance" placeholder="Initial Balance" value="10000"/>
+    <button type="submit">Create Account</button>
+  </form>
+  <div id="login-message"></div>
+</div>
+
+<div id="main-screen" style="display:none;">
+  <h2>Welcome, <span id="user-id"></span> <span id="admin-label" style="color:#f90;"></span></h2>
+  <button onclick="logout()">Logout</button>
+  <div class="nav-tabs">
+    <button id="tab-portfolio" class="active" onclick="showTab('portfolio')">Portfolio</button>
+    <button id="tab-trading" onclick="showTab('trading')">Trading</button>
+    <button id="tab-trades" onclick="showTab('trades')">Trade History</button>
+    <button id="tab-admin" onclick="showTab('admin')" style="display:none;">Add Stock</button>
+  </div>
+
+  <div id="tab-content">
+    <div id="content-portfolio">
+      <div class="card">
+        <h3>Account Balance: $<span id="balance">0.00</span></h3>
+      </div>
+      <div class="card">
+        <h3>Holdings</h3>
+        <div id="holdings"></div>
+      </div>
+      <div class="card">
+        <h3>Active Orders</h3>
+        <div id="active-orders"></div>
+      </div>
+    </div>
+
+    <div id="content-trading" style="display:none;">
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>Place Order</h3>
+          <input type="text" id="trade-symbol" placeholder="Symbol"/>
+          <div style="margin:5px 0;">
+            <button onclick="setOrderSide('BUY')">Buy</button>
+            <button onclick="setOrderSide('SELL')">Sell</button>
+          </div>
+          <input type="number" id="trade-price" placeholder="Price"/>
+          <input type="number" id="trade-qty" placeholder="Quantity"/>
+          <button onclick="placeOrder()">Place Order</button>
+        </div>
+        <div class="card">
+          <h3>Order Book</h3>
+          <div id="orderbook-bids"></div>
+          <div id="orderbook-asks"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Available Symbols</h3>
+        <div id="market-symbols"></div>
+      </div>
+    </div>
+
+    <div id="content-trades" style="display:none;">
+      <div id="trade-history"></div>
+    </div>
+
+    <div id="content-admin" style="display:none;">
+      <div class="card">
+        <h3>Add New Stock</h3>
+        <input type="text" id="admin-symbol" placeholder="Stock Symbol"/>
+        <input type="number" id="admin-qty" placeholder="Quantity"/>
+        <button onclick="addStock()">Add Stock</button>
+      </div>
+    </div>
+  </div>
+  <div id="global-message"></div>
+</div>
+
+<script>
+let ws;
+let userID='';
+let isAdmin=false;
+let orderSide='BUY';
+
+function showMessage(msg,type='info'){
+  document.getElementById('login-message').textContent=msg;
+  document.getElementById('login-message').className=type;
+  setTimeout(()=>document.getElementById('login-message').textContent='',4000);
+  document.getElementById('global-message').textContent=msg;
+  document.getElementById('global-message').className=type;
+  setTimeout(()=>document.getElementById('global-message').textContent='',4000);
+}
+
+function setAuthMode(mode){
+  document.getElementById('login-form').style.display = mode==='login'?'block':'none';
+  document.getElementById('signin-form').style.display = mode==='signin'?'block':'none';
+}
+
+function connectWS(){
+  ws=new WebSocket('ws://localhost:8080');
+  ws.onopen=()=>document.getElementById('connection-status').textContent='Connected';
+  ws.onclose=()=>{document.getElementById('connection-status').textContent='Disconnected'; setTimeout(connectWS,3000);};
+  ws.onerror=()=>showMessage('WebSocket error','error');
+  ws.onmessage=(event)=>{
+    let resp=JSON.parse(event.data);
+    handleResponse(resp);
+  };
+}
+
+function handleResponse(resp) {
+  console.log("WS:", resp);
+
+  if (resp.status === 'error') {
+    showMessage(resp.message, 'error');
+    return;
+  }
+
+  // ✅ LOGIN / SIGNUP RESPONSE
+  if (resp.userID) {
+    userID = resp.userID;
+    isAdmin = (userID === 'admin123');
+
+    document.getElementById('user-id').textContent = userID;
+    document.getElementById('admin-label').textContent = isAdmin ? '(Admin)' : '';
+
+    if (isAdmin)
+      document.getElementById('tab-admin').style.display = 'inline-block';
+
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('main-screen').style.display = 'block';
+
+    fetchPortfolio();
+    fetchMarket();
+    fetchTrades();
+    return;
+  }
+
+  // ✅ ORDER BOOK
+  if (resp.data && (resp.data.buy || resp.data.sell)) {
+    updateOrderBook(resp.data);
+    return;
+  }
+
+  // ✅ PORTFOLIO
+  if (resp.data && resp.data.cash && resp.data.holdings) {
+    updatePortfolio(resp.data);
+    return;
+  }
+
+  // ✅ TRADES / MARKET
+  if (Array.isArray(resp.data)) {
+    if (resp.data.length && typeof resp.data[0] === 'string')
+      updateMarketSymbols(resp.data);
+    else
+      updateTrades(resp.data);
+    return;
+  }
+
+  // ✅ PLACE / CANCEL ORDER
+  if (resp.type === 'PLACE_ORDER' || resp.type === 'CANCEL_ORDER') {
+    fetchPortfolio();
+    fetchTrades();
+  }
+}
+
+document.getElementById('login-form').onsubmit=(e)=>{
+  e.preventDefault();
+  let uid=document.getElementById('login-userid').value.trim();
+  if(!uid){showMessage('Enter user ID','error'); return;}
+  ws.send(JSON.stringify({type:'LOG_IN',data:{userID:uid}}));
+};
+document.getElementById('signin-form').onsubmit=(e)=>{
+  e.preventDefault();
+  let uid=document.getElementById('signin-userid').value.trim();
+  let balance=parseFloat(document.getElementById('signin-balance').value)||10000;
+  if(!uid){showMessage('Enter user ID','error'); return;}
+  ws.send(JSON.stringify({type:'SIGN_IN',data:{userID:uid,balance}}));
+};
+
+function fetchPortfolio(){ ws.send(JSON.stringify({type:'GET_PORTFOLIO',data:{userID}})); }
+function fetchTrades(){ ws.send(JSON.stringify({type:'GET_TRADES',data:{userID}})); }
+function fetchMarket(){ ws.send(JSON.stringify({type:'GET_MARKET'})); }
+
+function updatePortfolio(data){
+  document.getElementById('balance').textContent=data.cash.available.toFixed(2);
+  let htm='';
+  for(let sym in data.holdings){
+    htm+=`<div class="card">${sym}: ${data.holdings[sym].total} <button onclick="setTradeSymbol('${sym}')">Trade</button></div>`;
+  }
+  document.getElementById('holdings').innerHTML=htm;
+
+  let ords='';
+  if(data.activeOrders && data.activeOrders.length){
+    data.activeOrders.forEach(o=>{
+      ords+=`<div class="card">${o.symbol} ${o.side} ${o.remaining} @ ${o.price} <button onclick="cancelOrder(${o.orderID})">Cancel</button></div>`;
+    });
+  } else ords='<div class="card">No active orders</div>';
+  document.getElementById('active-orders').innerHTML=ords;
+}
+
+function updateOrderBook(book) {
+  let bidsHTML = '<h4>Bids</h4>';
+  let asksHTML = '<h4>Asks</h4>';
+
+  if (book.buy && book.buy.length) {
+    book.buy.forEach(level => {
+      let qty = 0;
+      level.orders.forEach(o => qty += (o.remaining ?? o.quantity));
+      bidsHTML += `<div>${qty} @ ${level.price}</div>`;
+    });
+  } else {
+    bidsHTML += '<div>No bids</div>';
+  }
+
+  if (book.sell && book.sell.length) {
+    book.sell.forEach(level => {
+      let qty = 0;
+      level.orders.forEach(o => qty += (o.remaining ?? o.quantity));
+      asksHTML += `<div>${qty} @ ${level.price}</div>`;
+    });
+  } else {
+    asksHTML += '<div>No asks</div>';
+  }
+
+  document.getElementById('orderbook-bids').innerHTML = bidsHTML;
+  document.getElementById('orderbook-asks').innerHTML = asksHTML;
+}
+
+function updateTrades(trades){
+  let htm='';
+  trades.forEach(t=>{
+    const side=(t.buyUserID===userID)?'BUY':'SELL';
+    const ts=new Date(t.timestamp*1000).toLocaleString();
+    htm+=`<div class="card">${t.symbol} ${side} ${t.quantity} @ ${t.price} on ${ts}</div>`;
+  });
+  document.getElementById('trade-history').innerHTML=htm;
+}
+
+function updateMarketSymbols(symbols){
+  let htm='';
+  symbols.forEach(s=>htm+=`<button onclick="setTradeSymbol('${s}')">${s}</button> `);
+  document.getElementById('market-symbols').innerHTML=htm;
+}
+
+function setTradeSymbol(sym){
+  document.getElementById('trade-symbol').value=sym;
+  ws.send(JSON.stringify({type:'GET_ORDERBOOK',data:{symbol:sym}}));
+}
+function setOrderSide(side){orderSide=side;}
+function placeOrder(){
+  let sym=document.getElementById('trade-symbol').value.trim();
+  let price=parseFloat(document.getElementById('trade-price').value);
+  let qty=parseInt(document.getElementById('trade-qty').value);
+  if(!sym||!price||!qty){showMessage('Fill all fields','error');return;}
+  ws.send(JSON.stringify({type:'PLACE_ORDER',data:{userID,symbol:sym,side:orderSide,price,quantity:qty}}));
+  setTimeout(() => {
+    fetchPortfolio();
+    fetchTrades();
+    updateOrderBook(resp.data);
+  }, 100);
+}
+function cancelOrder(id){ws.send(JSON.stringify({type:'CANCEL_ORDER',data:{userID,orderID:id}}));
+setTimeout(() => {
+    fetchPortfolio();
+    fetchTrades();
+  }, 100);
+}
+function addStock(){
+  let sym=document.getElementById('admin-symbol').value.trim();
+  let qty=parseInt(document.getElementById('admin-qty').value);
+  if(!sym||!qty){showMessage('Fill all fields','error');return;}
+  ws.send(JSON.stringify({type:'ADD_STOCK',data:{userID,symbol:sym,quantity:qty}}));
+  setTimeout(() => {
+    fetchPortfolio();
+    fetchTrades();
+    fetchMarket();
+    updateOrderBook(resp.data);
+  }, 100);
+
+
+}
+function logout(){
+  userID=''; isAdmin=false;
+  document.getElementById('main-screen').style.display='none';
+  document.getElementById('login-screen').style.display='block';
+  document.getElementById('tab-admin').style.display='none';
+}
+function showTab(tab){
+  ['portfolio','trading','trades','admin'].forEach(t=>document.getElementById('content-'+t).style.display='none');
+  document.getElementById('tab-portfolio').classList.remove('active');
+  document.getElementById('tab-trading').classList.remove('active');
+  document.getElementById('tab-trades').classList.remove('active');
+  document.getElementById('tab-admin').classList.remove('active');
+  document.getElementById('content-'+tab).style.display='block';
+  document.getElementById('tab-'+tab).classList.add('active');
+}
+
+function selectSymbol(sym) {
+  setCurrentSymbol(sym);
+
+  ws.send(JSON.stringify({
+    type: "GET_ORDER_BOOK",
+    data: { symbol: sym }
+  }));
+}
+
+connectWS();
+</script>
+</div>
+</body>
+</html>

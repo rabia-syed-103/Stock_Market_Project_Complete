@@ -145,6 +145,7 @@ public:
                     std::cout << "Error: Insufficient shares\n";
                     return nullptr;
                 }
+                user->removeStock(symbol, quantity);
             }
             
             // Write updated user to disk immediately
@@ -171,8 +172,11 @@ public:
             meta.nextTradeID = nextTradeID;
             metadataStorage.saveMetadata(meta);
 
-        }
+            user->addActiveOrder(order->getOrderID());
+            userStorage.updateUser(*user);
 
+        }
+     
         
         // Step 5: Match order in order book
         std::cerr << "[DBG] placeOrder: Getting order book\n";
@@ -192,6 +196,11 @@ public:
 
 
         std::cout << "Order placed: " << order->toString() << "\n";
+        if (order->remainingQty == 0) {
+            user->removeActiveOrder(order->orderID);
+            userStorage.updateUser(*user);
+        }
+
         return order;
     }
 
@@ -229,6 +238,13 @@ bool cancelOrder(int orderID, const std::string& userID) {
 
             userStorage.updateUser(*user);
         }
+    }
+
+    // ✅ REMOVE FROM USER ACTIVE ORDERS
+    User* user = getUser(userID);
+    if (user) {
+        user->removeActiveOrder(orderID);
+        userStorage.updateUser(*user);
     }
 
     // Mark cancelled persistently
@@ -295,6 +311,9 @@ bool cancelOrder(int orderID, const std::string& userID) {
         return std::find(symbols.begin(), symbols.end(), symbol) != symbols.end();
     }
 
+    vector<string> getAllSymbols() {
+        return symbolStorage.loadAllSymbols();
+    }
     std::vector<Trade> getUserTrades(const std::string& userID) {
         // Load all trades from disk and filter
         std::vector<Trade> allTrades = tradeStorage.loadAllTrades();
@@ -387,6 +406,28 @@ bool cancelOrder(int orderID, const std::string& userID) {
         }
 
         result["holdings"] = holdingsJson;
+        // Active orders section
+        result["activeOrders"] = json::array();
+        vector<Order*> orders = getActiveOrders(userID);
+        if(orders.empty()) {
+            cout << "No active orders for user " << userID << "\n";
+        }
+        for (Order* order : orders) {
+            result["activeOrders"].push_back({
+                {"orderID",   order->orderID},
+                {"symbol",    order->symbol},
+                {"side",      order->side},
+                {"price",     order->price},
+                {"quantity",  order->quantity},
+                {"remaining", order->remainingQty},
+                {"status",    order->status}
+            });
+
+            if (order->side == "BUY") {
+                reservedCash += order->price * order->getRemainingQuantity();
+            }
+        }
+
 
         return result;
     }
@@ -468,7 +509,6 @@ private:
     {
         std::lock_guard<std::mutex> lock(userLock);
         buyer->addStock(trade.symbol, trade.quantity);
-        seller->removeStock(trade.symbol, trade.quantity);
         seller->addCash(trade.price * trade.quantity);
         
         userStorage.updateUser(*buyer);
