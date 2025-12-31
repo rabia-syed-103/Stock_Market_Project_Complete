@@ -30,9 +30,11 @@ private:
     SymbolStorage symbolStorage;
 
     // IN-MEMORY CACHES (for performance)
-    LRUCache<int, Order> orderCache;           // Cache 1000 recent orders
+    LRUCache<int, Order> orderCache;      // Cache 1000 recent orders
     LRUCache<string, User> userCache;     // Cache 100 active users
-    LRUCache<string, OrderBook> bookCache; // Cache 10 active order books
+    
+    // ✅ CHANGED: Use map instead of cache for order books
+    std::map<std::string, std::shared_ptr<OrderBook>> orderBooks;  // Persistent!
 
     // LOCKS
     mutex orderLock;
@@ -40,15 +42,13 @@ private:
     mutex tradeLock;
     mutex bookLock;
 
-    // COUNTERS (persisted in metadata)
     int nextOrderID;
     int nextTradeID;
 
 public:
     PersistentMatchingEngine() 
-        : orderCache(1000), userCache(100), bookCache(10) {
+        : orderCache(1000), userCache(100) {  // ✅ Removed bookCache
         
-        // Load metadata from disk
         Metadata meta = metadataStorage.loadMetadata();
         nextOrderID = meta.nextOrderID;
         nextTradeID = meta.nextTradeID;
@@ -71,7 +71,8 @@ public:
         cout << "Cache hit rates:\n";
         cout << "  Orders: " << (orderCache.getHitRate() * 100) << "%\n";
         cout << "  Users: " << (userCache.getHitRate() * 100) << "%\n";
-        cout << "  Books: " << (bookCache.getHitRate() * 100) << "%\n";
+        
+        // ✅ OrderBooks will be automatically cleaned up by shared_ptr
     }
 
     void createUser(const std::string& userID, double initialCash) {
@@ -196,10 +197,7 @@ public:
 
 
         std::cout << "Order placed: " << order->toString() << "\n";
-        if (order->remainingQty == 0) {
-            user->removeActiveOrder(order->orderID);
-            userStorage.updateUser(*user);
-        }
+        
 
         return order;
     }
@@ -314,6 +312,7 @@ bool cancelOrder(int orderID, const std::string& userID) {
     vector<string> getAllSymbols() {
         return symbolStorage.loadAllSymbols();
     }
+   
     std::vector<Trade> getUserTrades(const std::string& userID) {
         // Load all trades from disk and filter
         std::vector<Trade> allTrades = tradeStorage.loadAllTrades();
@@ -327,6 +326,28 @@ bool cancelOrder(int orderID, const std::string& userID) {
         
         return userTrades;
     }
+
+    json getAllUserIDsJSON(const std::string& requestingUserID) {
+        json result = json::array();
+
+        // 🔒 Admin-only access
+        if (requestingUserID != "admin123") {
+            std::cout << "Unauthorized access to user IDs\n";
+            return result;
+        }
+
+        std::vector<User> users = userStorage.loadAllUsers();
+
+        // Return only user IDs (no cache pollution)
+        for (const auto& u : users) {
+            if(u.getUserID() == "admin123") continue; 
+            result.push_back(u.getUserID());
+        }
+
+        return result;
+    }
+
+
 
     std::vector<Order*> getActiveOrders(const std::string& userID) {
         // Load user from disk
@@ -435,19 +456,23 @@ bool cancelOrder(int orderID, const std::string& userID) {
 private:
  
     
-    OrderBook* getOrCreateOrderBook(const std::string& symbol) {
-    std::lock_guard<std::mutex> lock(bookLock);
-    
-    auto cached = bookCache.get(symbol);
-    if (cached) {
-        return cached.get();
+OrderBook* getOrCreateOrderBook(const std::string& symbol) {
+        std::lock_guard<std::mutex> lock(bookLock);
+        
+        // Check if already exists
+        auto it = orderBooks.find(symbol);
+        if (it != orderBooks.end()) {
+            return it->second.get();
+        }
+        
+        // Create new order book (persists forever until shutdown)
+        auto book = std::make_shared<OrderBook>(symbol, orderStorage);
+        orderBooks[symbol] = book;
+        
+        std::cerr << "[INFO] Created order book for " << symbol << "\n";
+        
+        return book.get();
     }
-    
-    auto book = std::make_shared<OrderBook>(symbol, orderStorage);
-    
-    bookCache.put(symbol, book);
-    return book.get();
-}
 
     Order loadOrderFromDisk(int orderID) {
         // Try cache first
@@ -480,22 +505,105 @@ private:
         return ptr.get();
     }
 
-    void processTrades(const std::vector<Trade>& trades) {
-        for (Trade trade : trades) {
-            {
-                std::lock_guard<std::mutex> lock(tradeLock);
-                trade.tradeID = nextTradeID++;
-            }
-            
-            // Update users
-            updateUsersForTrade(trade);
-            
-            // Persist trade to disk immediately
-            tradeStorage.persist(trade);
-            
-            std::cout << "Trade executed: " << trade.toString() << "\n";
+void processTrades(const std::vector<Trade>& trades) {
+    for (Trade trade : trades) {
+        {
+            std::lock_guard<std::mutex> lock(tradeLock);
+            trade.tradeID = nextTradeID++;
         }
+        
+        // Handle price refunds for buyers
+        Order* buyOrder = getOrderFromDisk(trade.buyOrderID);
+        if (buyOrder && buyOrder->side == "BUY") {
+            double reservedPrice = buyOrder->price;
+            double executedPrice = trade.price;
+            
+            if (executedPrice < reservedPrice) {
+                double refund = (reservedPrice - executedPrice) * trade.quantity;
+                
+                User* buyer = getUser(trade.buyUserID);
+                if (buyer) {
+                    std::lock_guard<std::mutex> lock(userLock);
+                    buyer->addCash(refund);
+                    userStorage.updateUser(*buyer);
+                    std::cout << "Refunded $" << refund << " to " << trade.buyUserID 
+                              << " (price diff: " << reservedPrice << " vs " << executedPrice << ")\n";
+                }
+            }
+        }
+        
+        // Update users' portfolios
+        updateUsersForTrade(trade);
+        
+        // ✅ NEW: Update both orders on disk and clean up active orders
+        updateOrdersAfterTrade(trade);
+        
+        // Persist trade to disk immediately
+        tradeStorage.persist(trade);
+        
+        std::cout << "Trade executed: " << trade.toString() << "\n";
     }
+}
+
+// ✅ NEW FUNCTION: Update orders after trade execution
+void updateOrdersAfterTrade(const Trade& trade) {
+    std::lock_guard<std::mutex> lock(orderLock);
+    
+    // Update buy order
+    DiskOffset buyOffset = orderStorage.getOffsetForOrder(trade.buyOrderID);
+    if (buyOffset) {
+        Order buyOrder = orderStorage.load(buyOffset);
+        
+        // If fully filled, mark as FILLED and remove from active orders
+        if (buyOrder.remainingQty == 0) {
+            buyOrder.status = "FILLED";
+            orderStorage.save(buyOrder, buyOffset);
+            
+            User* buyer = getUser(trade.buyUserID);
+            if (buyer) {
+                std::lock_guard<std::mutex> lock(userLock);
+                buyer->removeActiveOrder(trade.buyOrderID);
+                userStorage.updateUser(*buyer);
+                std::cout << "Removed filled order " << trade.buyOrderID 
+                          << " from " << trade.buyUserID << "'s active orders\n";
+            }
+        } else {
+            // Partial fill - just update the order on disk
+            orderStorage.save(buyOrder, buyOffset);
+        }
+        
+        // Update cache
+        orderCache.put(trade.buyOrderID, std::make_shared<Order>(buyOrder));
+    }
+    
+    // Update sell order
+    DiskOffset sellOffset = orderStorage.getOffsetForOrder(trade.sellOrderID);
+    if (sellOffset) {
+        Order sellOrder = orderStorage.load(sellOffset);
+        
+        // If fully filled, mark as FILLED and remove from active orders
+        if (sellOrder.remainingQty == 0) {
+            sellOrder.status = "FILLED";
+            orderStorage.save(sellOrder, sellOffset);
+            
+            User* seller = getUser(trade.sellUserID);
+            if (seller) {
+                std::lock_guard<std::mutex> lock(userLock);
+                seller->removeActiveOrder(trade.sellOrderID);
+                userStorage.updateUser(*seller);
+                std::cout << "Removed filled order " << trade.sellOrderID 
+                          << " from " << trade.sellUserID << "'s active orders\n";
+            }
+        } else {
+            // Partial fill - just update the order on disk
+            orderStorage.save(sellOrder, sellOffset);
+        }
+        
+        // Update cache
+        orderCache.put(trade.sellOrderID, std::make_shared<Order>(sellOrder));
+    }
+}
+
 
     void updateUsersForTrade(const Trade& trade) {
     // NO LOCK HERE - getUser() will lock internally
@@ -535,19 +643,17 @@ private:
     }
 
     void rebuildAllOrderBooks() {
-    vector<string> symbols = symbolStorage.loadAllSymbols();
-    
-    for (const string& symbol : symbols) {
-        auto book = std::make_shared<OrderBook>(symbol, orderStorage);
-        book->rebuildFromStorage();
-        bookCache.put(symbol, book);
+        vector<string> symbols = symbolStorage.loadAllSymbols();
+        
+        for (const string& symbol : symbols) {
+            auto book = std::make_shared<OrderBook>(symbol, orderStorage);
+            book->rebuildFromStorage();
+            orderBooks[symbol] = book;  // ✅ Store in map, not cache
+        }
+        
+        cout << "Rebuilt " << symbols.size() << " order books from storage.\n";
     }
-    
-    cout << "Rebuilt " << symbols.size() << " order books from storage.\n";
-    }
-
-    
-
 };
+
 
 #endif // PERSISTENT_MATCHING_ENGINE_H

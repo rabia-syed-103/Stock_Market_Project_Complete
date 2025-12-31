@@ -4,7 +4,7 @@
 #include "OrderQueue.h"
 #include "../storage/DiskTypes.h"
 
-const int MAX_KEYS = 5;
+const int MAX_KEYS = 40;
 
 struct BTreeNode {
     int numKeys;

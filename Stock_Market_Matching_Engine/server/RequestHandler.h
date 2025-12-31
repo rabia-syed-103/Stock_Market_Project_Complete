@@ -45,9 +45,8 @@ public:
                 else if(type == "GET_ORDERBOOK") response = handleGetOrderBook(data);
                 else if(type == "GET_TRADES") response = handleGetTrades(data);
                 else if(type == "ADD_STOCK") response = handleAddStock(data);
-                else if(type == "GET_MARKET") {    response = handleGetMarket();
-}
-
+                else if(type == "GET_MARKET") {    response = handleGetMarket();}
+                else if(type == "ADMIN_GET_USER_IDS") {response = handleAdminGetUserIDs(data);}
                 else response = { {"status", "error"}, {"message", "Unknown request type"} };
             }
         } catch(const std::exception& e) {
@@ -186,9 +185,34 @@ private:
             return { {"status", "error"}, {"message", "Failed to add stock"} };
     }
     json handleGetMarket() {
-    auto symbols = engine.getAllSymbols(); // return vector<string>
-    return { {"status","success"}, {"data", symbols} };
-}
+        auto symbols = engine.getAllSymbols(); // return vector<string>
+        return {
+            {"status","success"},
+            {"type","MARKET_SYMBOLS"},   // <-- new
+            {"data", symbols}
+        };
+    }
+
+
+    json handleAdminGetUserIDs(const json& data) {
+        std::string userID = data.value("userID", "");
+
+        if (userID != "admin123") {
+            return {
+                {"status", "error"},
+                {"message", "Permission denied"}
+            };
+        }
+
+        json userIDs = engine.getAllUserIDsJSON(userID);
+
+        return {
+            {"status", "success"},
+            {"type","ADMIN_GET_USER_IDS"},   // <-- new
+            {"data", userIDs}
+        };
+    }
+
     // In RequestHandler.h
     
 };

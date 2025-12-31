@@ -93,15 +93,20 @@ void BTree::insertNonFull(BTreeNode* node, double key, DiskOffset offset) {
         }
 
            if (i >= 0 && node->keys[i] == key) {
-        std::cerr << "[DBG] BTree::insert: enqueuing offset="<<offset<<" at existing key="<<key<<"\n";
-        node->queues[i]->enqueue(offset);
-    } else {
-            std::cerr << "[DBG] BTree::insert: creating new queue at key="<<key<<" offset="<<offset<<"\n";
-            node->keys[i + 1] = key;
-            node->queues[i + 1] = new OrderQueue();
-            node->queues[i + 1]->enqueue(offset);
-            node->numKeys++;
-        }
+    std::cerr << "[DBG] BTree::insert: enqueuing offset="<<offset<<" at existing key="<<key<<"\n";
+    // ✅ Add null check
+    if (!node->queues[i]) {
+        node->queues[i] = new OrderQueue();
+    }
+    node->queues[i]->enqueue(offset);
+} else {
+    std::cerr << "[DBG] BTree::insert: creating new queue at key="<<key<<" offset="<<offset<<"\n";
+    node->keys[i + 1] = key;
+    node->queues[i + 1] = new OrderQueue();
+    node->queues[i + 1]->enqueue(offset);
+    node->numKeys++;
+}
+
     } else {
         while (i >= 0 && node->keys[i] > key) i--;
         i++;
@@ -148,12 +153,18 @@ void BTree::splitChild(BTreeNode* parent, int i, BTreeNode* y) {
     }
 
     // Insert middle key from y into parent
+    // Insert middle key from y into parent
     parent->children[i + 1] = z;
     parent->keys[i] = y->keys[mid];
-    
-    parent->queues[i] = y->queues[mid];
-    y->queues[mid] = nullptr;  
-    
+
+    // ✅ Make sure parent queue is never null
+    if (!y->queues[mid]) {
+        parent->queues[i] = new OrderQueue();
+    } else {
+        parent->queues[i] = y->queues[mid];
+    }
+    y->queues[mid] = nullptr;
+
     parent->numKeys++;
 }
 

@@ -419,6 +419,28 @@ input:focus {
 .btn-group button {
   flex: 1;
 }
+
+.user-item {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.user-item strong {
+  font-size: 15px;
+}
+
+.user-balance {
+  color: #10b981;
+  font-weight: 600;
+  font-size: 14px;
+}
+
 </style>
 
 
@@ -460,8 +482,14 @@ input:focus {
 <div id="main-screen" style="display:none;">
   <div class="header-bar">
     <h2>Welcome, <span id="user-id"></span> <span id="admin-label" class="admin-badge" style="display:none;"></span></h2>
-    <button onclick="logout()" class="btn-secondary">Logout</button>
+    <div>
+      <button onclick="refreshUI()" class="btn-secondary" style="margin-right:10px;">🔄 Refresh</button>
+      <button onclick="logout()" class="btn-secondary">Logout</button>
+    </div>
   </div>
+
+  
+
   
   <div class="nav-tabs">
     <button id="tab-portfolio" class="active" onclick="showTab('portfolio')">📊 Portfolio</button>
@@ -556,6 +584,14 @@ input:focus {
         </div>
         <button onclick="addStock()" class="btn-success" style="width:100%;">Add Stock to Market</button>
       </div>
+      <div class="card">
+        <h3>User Accounts</h3>
+        <button class="btn-secondary" onclick="fetchUsers()" style="margin-bottom:16px;">
+          🔄 Refresh Users
+        </button>
+        <div id="admin-users-list"></div>
+      </div>
+
     </div>
   </div>
   <div id="global-message"></div>
@@ -686,60 +722,73 @@ function connectWS() {
 function handleResponse(resp) {
   console.log("WS Response:", resp);
 
+  // ---------- ERROR ----------
   if (resp.status === 'error') {
-    showMessage(resp.message, 'error');
+    showMessage(resp.message || 'Unknown error', 'error');
     return;
   }
 
-  // LOGIN/SIGNUP Response
+  // ---------- LOGIN / SIGNUP ----------
   if (resp.userID) {
     userID = resp.userID;
     isAdmin = (userID === 'admin123');
+
     document.getElementById('user-id').textContent = userID;
-    
+
     if (isAdmin) {
       document.getElementById('admin-label').textContent = 'ADMIN';
       document.getElementById('admin-label').style.display = 'inline-block';
       document.getElementById('tab-admin').style.display = 'inline-block';
     }
-    
+
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('main-screen').style.display = 'block';
-    
+
     fetchPortfolio();
     fetchMarket();
     fetchTrades();
+    fetchUsers();
+
     showMessage('Login successful!', 'success');
     return;
   }
 
-  // ORDER BOOK Response
+  // ---------- ORDER BOOK ----------
   if (resp.data && (resp.data.buy || resp.data.sell)) {
     updateOrderBook(resp.data);
     return;
   }
 
-  // PORTFOLIO Response
+  // ---------- PORTFOLIO ----------
   if (resp.data && resp.data.cash && resp.data.holdings) {
     updatePortfolio(resp.data);
     return;
   }
 
-  // MARKET / TRADES Response
+  // ---------- ADMIN USER LIST (🔥 MUST BE FIRST) ----------
+ if (resp.type === 'ADMIN_GET_USER_IDS' && isAdmin) {
+    updateAdminUsers(resp.data);
+    return;
+}
+
+  // ---------- MARKET SYMBOLS ----------
+ if (resp.type === 'MARKET_SYMBOLS') {
+    updateMarketSymbols(resp.data);
+    return;
+}
+
+  // ---------- TRADES ----------
   if (Array.isArray(resp.data)) {
-    if (resp.data.length && typeof resp.data[0] === 'string') {
-      updateMarketSymbols(resp.data);
-    } else {
-      updateTrades(resp.data);
-    }
+    updateTrades(resp.data);
     return;
   }
 
-  // ORDER ACTIONS Response
+  // ---------- ORDER ACTIONS ----------
   if (resp.type === 'PLACE_ORDER' || resp.type === 'CANCEL_ORDER') {
     fetchPortfolio();
     fetchTrades();
     showMessage('Order processed successfully!', 'success');
+    return;
   }
 }
 
@@ -814,6 +863,30 @@ function updatePortfolio(data) {
   }
   document.getElementById('active-orders').innerHTML = ords;
 }
+
+function fetchUsers() {
+  if (!isAdmin) return;
+
+  ws.send(JSON.stringify({
+    type: 'ADMIN_GET_USER_IDS'   // ✅ CORRECT
+  }));
+}
+
+function updateAdminUsers(userIDs) {
+  let htm = '';
+
+  userIDs.forEach(id => {
+    htm += `
+      <div class="user-item">
+        <strong>${id}</strong>
+      </div>
+    `;
+  });
+
+  document.getElementById('admin-users-list').innerHTML =
+    htm || '<div style="color:#9ca3af;text-align:center;">No users found</div>';
+}
+
 
 // Update Order Book Display
 function updateOrderBook(book) {
@@ -994,6 +1067,13 @@ function showTab(tab) {
   
   document.getElementById('content-' + tab).style.display = 'block';
   document.getElementById('tab-' + tab).classList.add('active');
+}
+function refreshUI() {
+  if (!userID) return;
+  fetchPortfolio();
+  fetchTrades();
+  fetchMarket();
+  showMessage('Refreshed successfully', 'success');
 }
 
 // Start WebSocket Connection
