@@ -35,10 +35,16 @@ void WebSocketServer::setSessionCleanup(
 
 void WebSocketServer::run() {
     running = true;
-    server.listen(port);
+
+    server.listen(
+        websocketpp::lib::asio::ip::tcp::v4(),
+        port
+    );
+
     server.start_accept();
     server.run();
 }
+
 
 void WebSocketServer::stop() {
     if (!running) return;
