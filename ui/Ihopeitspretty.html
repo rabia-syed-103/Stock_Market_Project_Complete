@@ -697,7 +697,7 @@ function setAuthMode(mode) {
 
 // WebSocket Connection
 function connectWS() {
-  ws = new WebSocket('ws://localhost:8080');
+  ws = new WebSocket('ws://98.92.152.16:8080');
   
   ws.onopen = () => {
     document.getElementById('connection-status').textContent = 'Connected';

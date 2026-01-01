@@ -153,6 +153,12 @@ User User::fromRecord(const UserRecord& rec) {
         user.symbols.push_back(string(rec.holdings[i].symbol));
         user.quantities.push_back(rec.holdings[i].quantity);
     }
+
+    for (int i = 0; i < rec.numActiveOrders; i++) {
+        user.activeOrders.push_back(rec.activeOrderIDs[i]);
+    }
+
+
     
     return user;
 }
